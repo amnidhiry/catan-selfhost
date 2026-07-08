@@ -150,6 +150,12 @@ footer {
 }
 .hand-card[data-empty="true"] { opacity: 0.35; }
 .hand-card.dev { background: var(--fields); }
+.turn-clock {
+  font-weight: 700; font-variant-numeric: tabular-nums;
+  padding: 0.3rem 0.6rem; border-radius: 8px;
+  background: var(--parchment); border: 2px solid var(--parchment-edge); color: var(--ink);
+}
+.turn-clock.urgent { background: var(--hot-number); color: var(--parchment); border-color: var(--hot-number); }
 .action-bar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-left: auto; }
 .action-bar.dim { color: var(--ink-soft); font-style: italic; }
 
@@ -223,6 +229,35 @@ footer {
   max-width: min(92vw, 34rem);
 }
 .setup-banner.urgent { background: var(--hint); }
+
+/* ---------- building costs reference (right-edge tab) ---------- */
+.costs-tab {
+  position: fixed; right: 0; top: 26%; z-index: 15;
+  writing-mode: vertical-rl; transform: rotate(180deg);
+  border-radius: 0 10px 10px 0; border-right: none;
+  padding: 0.8rem 0.35rem; box-shadow: -3px 0 10px rgba(0, 0, 0, 0.25);
+}
+.costs-panel {
+  position: fixed; right: 0; top: 22%; z-index: 16;
+  width: min(15rem, 80vw);
+  background: var(--parchment); color: var(--ink);
+  border: 2px solid var(--parchment-edge); border-right: none;
+  border-radius: 10px 0 0 10px; padding: 0.6rem 0.8rem;
+  box-shadow: -6px 0 22px rgba(0, 0, 0, 0.3);
+}
+.costs-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 0.4rem; padding-bottom: 0.35rem;
+  border-bottom: 2px solid var(--parchment-edge);
+}
+.costs-close { border: none; background: transparent; font-size: 1.3rem; line-height: 1; padding: 0 0.3rem; }
+.costs-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.costs-table td { padding: 0.28rem 0.2rem; vertical-align: middle; }
+.costs-table tr + tr td { border-top: 1px solid var(--parchment-edge); }
+.cost-name { font-weight: 700; white-space: nowrap; }
+.cost-vp { color: var(--ink-soft); white-space: nowrap; text-align: center; }
+.cost-icons { display: inline-flex; flex-wrap: wrap; gap: 0.1rem; }
+.cost-icon { line-height: 1; }
 
 /* ---------- chat + non-blocking trades (right-edge drawer) ---------- */
 .chat-tab {

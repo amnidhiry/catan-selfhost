@@ -3,6 +3,7 @@ import { CatanClient, createRoom } from "./catanClient";
 import Board from "./Board";
 import TradePanel from "./TradePanel";
 import ChatPanel from "./ChatPanel";
+import BuildCosts from "./BuildCosts";
 
 const RESOURCES = ["WOOD", "BRICK", "SHEEP", "WHEAT", "ORE"];
 const RES_ICON = { WOOD: "🪵", BRICK: "🧱", SHEEP: "🐑", WHEAT: "🌾", ORE: "🪨" };
@@ -71,6 +72,7 @@ function Lobby({ onEnter }) {
 function Seats({ room, isHost, onStart, onAddBot, onRemoveBot }) {
   const [mode, setMode] = useState("standard");
   const [bonusStart, setBonusStart] = useState(false);
+  const [turnTimer, setTurnTimer] = useState(0);
   const [botKind, setBotKind] = useState("normal");
   const eligible = room.modes.filter(
     (m) => room.players.length >= m.min && room.players.length <= m.max
@@ -110,6 +112,15 @@ function Seats({ room, isHost, onStart, onAddBot, onRemoveBot }) {
                    onChange={(e) => setBonusStart(e.target.checked)} />
             Generous start — collect from both starting settlements
           </label>
+          <label className="house-rule" title="After a player rolls, auto-end their turn if they don't within this time.">
+            <span>Turn timer</span>
+            <select value={turnTimer} onChange={(e) => setTurnTimer(Number(e.target.value))}>
+              <option value={0}>Off</option>
+              <option value={60}>60 seconds</option>
+              <option value={90}>90 seconds</option>
+              <option value={120}>120 seconds</option>
+            </select>
+          </label>
           <div className="start-row">
             <select value={mode} onChange={(e) => setMode(e.target.value)}>
               {room.modes.map((m) => (
@@ -121,7 +132,7 @@ function Seats({ room, isHost, onStart, onAddBot, onRemoveBot }) {
             </select>
             <button className="primary"
                     disabled={!eligible.some((x) => x.key === mode)}
-                    onClick={() => onStart(mode, { bonusStart })}>
+                    onClick={() => onStart(mode, { bonusStart, turnTimer })}>
               Start game
             </button>
           </div>
@@ -279,6 +290,22 @@ function Toasts({ toasts }) {
   );
 }
 
+function TurnClock({ deadline }) {
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    if (!deadline) return;
+    const id = setInterval(() => setNow(Date.now() / 1000), 250);
+    return () => clearInterval(id);
+  }, [deadline]);
+  if (!deadline) return null;
+  const remaining = Math.max(0, Math.ceil(deadline - now));
+  return (
+    <div className={`turn-clock ${remaining <= 10 ? "urgent" : ""}`} title="Turn auto-ends at 0">
+      ⏱ {remaining}s
+    </div>
+  );
+}
+
 function ActionBar({ state, client, names }) {
   const mine = useMemo(() => {
     const s = new Set((state.playable_actions ?? []).map((a) => a.type));
@@ -395,9 +422,11 @@ export default function App() {
              onChooseVictim={(coordinate, victims) => setVictimPrompt({ coordinate, victims })} />
       <VictimPicker prompt={victimPrompt} client={clientRef.current}
                     onClose={() => setVictimPrompt(null)} />
+      <BuildCosts />
       <ChatPanel chat={chat} client={clientRef.current} state={state} />
       <footer>
         <Toasts toasts={toasts} />
+        <TurnClock deadline={state.turn_deadline} />
         <Hand hand={state.your_hand} />
         <DiscardPanel state={state} client={clientRef.current} />
         <TradePanel state={state} client={clientRef.current} names={nameByColor} />

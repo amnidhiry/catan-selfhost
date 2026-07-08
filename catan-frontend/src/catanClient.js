@@ -144,6 +144,7 @@ export class CatanClient {
       host_token: hostToken,
       mode,
       bonus_start: !!options.bonusStart,
+      turn_timer: Number(options.turnTimer) || 0,
     });
   }
 

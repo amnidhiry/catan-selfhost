@@ -5,6 +5,7 @@ Client actions map to catanatron ActionTypes (schema section 5).
 """
 import asyncio
 import json
+import time
 import uuid
 from contextlib import asynccontextmanager
 
@@ -46,7 +47,7 @@ async def broadcast_state(room: Room):
                     seat.ws,
                     "state",
                     serialize_for(room.game, color, room.seating)
-                    | {"waiting_on": room.waiting_on()},
+                    | {"waiting_on": room.waiting_on(), "turn_deadline": room.turn_deadline},
                     seq=room.seq,
                 )
             except Exception:
@@ -90,6 +91,30 @@ async def broadcast_chat(room: Room):
                 seat.connected = False
 
 
+async def start_turn_timer(room: Room):
+    """If a per-turn timer is on, arm a watcher for the current human turn.
+    On expiry it force-advances the turn (see Room.force_advance_turn). Stale
+    watchers no-op via the turn token, so there's nothing to cancel."""
+    if room.turn_timer_seconds <= 0 or room.phase != RoomPhase.PLAYING:
+        return
+    token = room._turn_token
+    room.turn_deadline = time.time() + room.turn_timer_seconds
+    asyncio.create_task(_turn_timeout(room, token, room.turn_timer_seconds))
+
+
+async def _turn_timeout(room: Room, token: int, seconds: int):
+    await asyncio.sleep(seconds)
+    async with room.lock:
+        if room._turn_token != token or room.phase != RoomPhase.PLAYING:
+            return  # the turn already ended; this watcher is stale
+        room.force_advance_turn()
+        room.persist()
+    await broadcast_state(room)
+    # The next seat's clock (if human) starts when THEY roll; if it's a bot,
+    # drive it now — a human further along will arm their own timer on rolling.
+    await drive_bots(room)
+
+
 async def drive_bots(room: Room):
     """Advance the game through any consecutive bot decision points until it's a
     human's turn (or the game is over), broadcasting after each so humans watch
@@ -111,8 +136,13 @@ async def drive_bots(room: Room):
         if bot is None:
             break
         game = room.game
+        # Never let a bot initiate catanatron's blocking domestic-trade flow
+        # (OFFER_TRADE): humans have no engine-trade UI anymore — trades happen
+        # in chat — so a bot offer would deadlock the turn. Filtering it out
+        # also can't strand the bot: END_TURN is always available in PLAY_TURN.
+        options = [a for a in game.playable_actions if a.action_type != ActionType.OFFER_TRADE]
         try:
-            action = await asyncio.to_thread(bot.decide, game, game.playable_actions)
+            action = await asyncio.to_thread(bot.decide, game, options)
             room.execute(color, action.action_type, action.value)
         except Exception:
             break  # never let a misbehaving bot wedge the room
@@ -296,6 +326,7 @@ async def game_socket(ws: WebSocket, room_code: str):
                         room.start(
                             data.get("mode", "standard"),
                             bonus_start=bool(data.get("bonus_start", False)),
+                            turn_timer_seconds=int(data.get("turn_timer", 0) or 0),
                         )
                         room.persist()
                     except ValueError as e:
@@ -320,6 +351,8 @@ async def game_socket(ws: WebSocket, room_code: str):
                 except PermissionError as e:
                     await send(ws, "error", {"reason": str(e)})
                     continue
+                if mtype == "roll_dice":
+                    await start_turn_timer(room)  # arm this human's turn clock
                 await broadcast_state(room)
                 await drive_bots(room)  # advance through any bot turns that follow
 

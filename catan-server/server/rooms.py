@@ -92,6 +92,14 @@ class Room:
     # one ordered list the client renders as a chat feed. Capped at CHAT_LOG_CAP.
     chat_log: list = field(default_factory=list)
     chat_seq: int = 0
+    # Optional per-turn timer (host-selected, seconds; 0 = off). After a human
+    # rolls, the server auto-ends the turn if they haven't within this window.
+    turn_timer_seconds: int = 0
+    # In-memory only (never pickled): bumped whenever a turn ends, so a pending
+    # timeout watcher can tell its turn already finished. turn_deadline is the
+    # epoch the current turn auto-ends (for the UI countdown), or None.
+    _turn_token: int = 0
+    turn_deadline: Optional[float] = None
 
     # --- lobby ---
     def next_free_color(self) -> Optional[Color]:
@@ -135,7 +143,7 @@ class Room:
         del self.seats[color]
 
     # --- game start ---
-    def start(self, mode_key: str, bonus_start: bool = False):
+    def start(self, mode_key: str, bonus_start: bool = False, turn_timer_seconds: int = 0):
         mode = GAME_MODES[mode_key]
         n = len(self.seats)
         if not (mode.min_players <= n <= mode.max_players):
@@ -144,6 +152,7 @@ class Room:
             )
         self.mode = mode
         self.bonus_start = bonus_start
+        self.turn_timer_seconds = max(0, int(turn_timer_seconds or 0))
         seating = [c for c in SEAT_ORDER if c in self.seats]
         players = []
         self.bot_players = {}
@@ -317,8 +326,36 @@ class Room:
             self._grant_starting_resources(color, value)
 
         self.seq += 1
+        # A turn ending invalidates any pending turn-timer watcher for that turn.
+        if action_type == ActionType.END_TURN:
+            self._turn_token += 1
+            self.turn_deadline = None
         if self.game.winning_color() is not None:
             self.phase = RoomPhase.OVER
+
+    def force_advance_turn(self) -> None:
+        """Turn-timer timeout: drive the current turn to its end with minimal
+        auto choices. Whatever the player already did stands; we only resolve
+        anything blocking an END_TURN (robber, discards, dev-card placement),
+        then end the turn. Preferring END_TURN means we never build/buy for them.
+        Call while holding self.lock."""
+        start_token = self._turn_token
+        steps = 0
+        while (
+            self.phase == RoomPhase.PLAYING
+            and self.game.winning_color() is None
+            and self._turn_token == start_token
+            and steps < 200
+        ):
+            actions = self.game.playable_actions
+            if not actions:
+                break
+            chosen = next(
+                (a for a in actions if a.action_type == ActionType.END_TURN),
+                actions[0],
+            )
+            self.execute(chosen.color, chosen.action_type, chosen.value)
+            steps += 1
 
     def _grant_starting_resources(self, color: Color, node_id: int) -> None:
         """Pay out one card per adjacent resource tile, drawing from the bank —
@@ -362,6 +399,7 @@ class Room:
             "bonus_start": self.bonus_start,
             "chat_log": self.chat_log,
             "chat_seq": self.chat_seq,
+            "turn_timer_seconds": self.turn_timer_seconds,
         }
         (PERSIST_DIR / f"{self.code}.pkl").write_bytes(pickle.dumps(snapshot))
 
@@ -376,6 +414,7 @@ class Room:
         room.bonus_start = snap.get("bonus_start", False)
         room.chat_log = snap.get("chat_log", [])
         room.chat_seq = snap.get("chat_seq", 0)
+        room.turn_timer_seconds = snap.get("turn_timer_seconds", 0)
         for color, s in snap["seats"].items():
             is_bot = s.get("is_bot", False)
             room.seats[color] = Seat(
