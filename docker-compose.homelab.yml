@@ -1,0 +1,43 @@
+# Self-hosted Catan — homelab deployment (Traefik + Tailscale).
+#
+# Use this instead of the plain docker-compose.yml when you already run a
+# Traefik reverse proxy and want to expose the game on a hostname rather than
+# a raw LAN port:
+#
+#     docker compose -f docker-compose.homelab.yml up -d --build
+#
+# There is NO auth beyond room codes — keep the router on a Tailscale-only
+# (or otherwise internal) Traefik entrypoint. Edit the Host() rule below.
+name: catan
+
+services:
+  backend:
+    build: ./catan-server
+    container_name: catan-backend
+    restart: unless-stopped
+    volumes:
+      - catan_rooms:/data
+    networks:
+      - traefik_proxy
+    # Not exposed publicly; the frontend proxies /rooms and /ws to it.
+
+  frontend:
+    build: ./catan-frontend
+    container_name: catan-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.catan.rule=Host(`catan.YOURDOMAIN.internal`)"
+      - "traefik.http.services.catan.loadbalancer.server.port=80"
+      # Tailscale-only: attach your existing internal-only entrypoint/middleware.
+
+volumes:
+  catan_rooms:
+
+networks:
+  traefik_proxy:
+    external: true

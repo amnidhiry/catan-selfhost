@@ -1,0 +1,34 @@
+# Self-hosted Catan — LAN deployment.
+#
+# One command brings up the whole game on your local network:
+#
+#     docker compose up -d --build
+#
+# Then everyone on the same Wi-Fi/LAN opens  http://<this-machine-ip>:8080
+# (find the IP with `ipconfig getifaddr en0` on macOS or `hostname -I` on Linux).
+#
+# The frontend container (nginx) serves the React build AND reverse-proxies
+# /rooms and /ws to the backend, so players only ever need the one URL/port.
+name: catan
+
+services:
+  backend:
+    build: ./catan-server
+    container_name: catan-backend        # nginx.conf proxies to this hostname
+    restart: unless-stopped
+    volumes:
+      - catan_rooms:/data                # game snapshots survive restarts
+    expose:
+      - "8000"                           # internal only; reached via the frontend proxy
+
+  frontend:
+    build: ./catan-frontend
+    container_name: catan-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"                        # the single URL players use on the LAN
+
+volumes:
+  catan_rooms:

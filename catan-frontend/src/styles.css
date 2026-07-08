@@ -1,0 +1,232 @@
+/* Design tokens — derived from the BGA reference the project chose:
+   vivid sea, sand island, parchment chrome. Signature: token chips. */
+:root {
+  --sea: #2f7fb6;
+  --sea-deep: #1f628f;
+  --sand: #e9d59f;
+  --forest: #3f7a4d;
+  --hills: #b65a33;
+  --pasture: #93bd5d;
+  --fields: #e0b545;
+  --mountains: #8d9097;
+  --desert: #d9c89b;
+  --parchment: #f4e9cd;
+  --parchment-edge: #8b6f3e;
+  --ink: #33291a;
+  --ink-soft: #6b5a3c;
+  --hot-number: #a5311f;
+  --hint: #ffe680;
+  --robber: #4a4440;
+  --boat: #a9743f;
+  --rope: #f4e9cd;
+  --p-red: #c0392b;
+  --p-blue: #2c5f8a;
+  --p-orange: #d68227;
+  --p-white: #efe9dc;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: "Public Sans", system-ui, sans-serif;
+  background: var(--sea-deep);
+  color: var(--ink);
+}
+h1 { font-family: "Grenze", serif; font-size: 3rem; margin: 0; color: var(--parchment); letter-spacing: 0.04em; }
+
+/* ---------- lobby & seats ---------- */
+.lobby, .seats {
+  min-height: 100dvh;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1.1rem; padding: 1.5rem; text-align: center;
+}
+.tagline { color: var(--sand); margin: 0; }
+.lobby label { display: flex; flex-direction: column; gap: 0.35rem; color: var(--parchment); font-weight: 600; }
+input, select {
+  font: inherit; padding: 0.55rem 0.8rem; border-radius: 8px;
+  border: 2px solid var(--parchment-edge); background: var(--parchment); color: var(--ink);
+}
+input:focus-visible, select:focus-visible, button:focus-visible {
+  outline: 3px solid var(--hint); outline-offset: 2px;
+}
+button {
+  font: inherit; font-weight: 700; cursor: pointer;
+  padding: 0.55rem 1.1rem; border-radius: 10px;
+  border: 2px solid var(--parchment-edge);
+  background: var(--parchment); color: var(--ink);
+}
+button.primary { background: var(--fields); }
+button:disabled { opacity: 0.45; cursor: default; }
+.join-row { display: flex; gap: 0.5rem; }
+.join-row input { width: 9ch; padding-inline: 0.5rem; text-transform: uppercase; text-align: center; letter-spacing: 0.3ch; }
+.join-row input::placeholder { letter-spacing: normal; }
+.error { color: #ffd7cf; }
+
+/* Signature: room code as number-token chips */
+.token-code { display: flex; gap: 0.6rem; }
+.token-chip {
+  width: 3.2rem; height: 3.2rem; border-radius: 50%;
+  background: var(--parchment); border: 2px solid var(--parchment-edge);
+  display: grid; place-items: center;
+  font-family: "Grenze", serif; font-size: 1.7rem; font-weight: 700;
+  box-shadow: 0 3px 0 var(--parchment-edge);
+}
+.seat-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; color: var(--parchment); }
+.seat-dot { width: 0.9em; height: 0.9em; border-radius: 50%; background: var(--seat); display: inline-block; margin-right: 0.5em; border: 1px solid rgba(0,0,0,0.3); }
+.offline { opacity: 0.7; font-style: italic; }
+.hint-text { color: var(--sand); font-size: 0.9rem; }
+.start-row { display: flex; gap: 0.6rem; }
+.house-rule {
+  display: flex; align-items: center; gap: 0.5rem;
+  color: var(--parchment); font-size: 0.9rem; cursor: pointer;
+  max-width: 22rem;
+}
+.house-rule input { width: 1.1rem; height: 1.1rem; accent-color: var(--fields); }
+.bot-row { display: flex; gap: 0.5rem; }
+.seat-remove {
+  margin-left: 0.5rem; padding: 0 0.4rem; border-radius: 6px; font-size: 0.8rem;
+  line-height: 1.4; border: 1px solid var(--parchment-edge); background: transparent;
+  color: var(--parchment);
+}
+
+/* ---------- game layout ---------- */
+.game { display: grid; grid-template-rows: auto 1fr auto; height: 100dvh; }
+.board { width: 100%; height: 100%; display: block; }
+.players {
+  display: flex; gap: 0.5rem; padding: 0.5rem; overflow-x: auto;
+  background: color-mix(in srgb, var(--sea-deep) 80%, black);
+}
+.player-card {
+  background: var(--parchment); border: 2px solid var(--parchment-edge);
+  border-radius: 10px; padding: 0.4rem 0.6rem; min-width: 9.5rem;
+}
+.player-card.active { box-shadow: 0 0 0 3px var(--hint); }
+.player-head { display: flex; align-items: center; gap: 0.35rem; }
+.vp { margin-left: auto; font-weight: 700; }
+.player-stats { display: flex; gap: 0.6rem; font-size: 0.85rem; margin-top: 0.2rem; }
+.waiting { font-size: 0.8rem; font-style: italic; color: var(--hot-number); }
+
+footer {
+  position: relative;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.7rem;
+  padding: 0.5rem 0.8rem;
+  background: var(--parchment); border-top: 3px solid var(--parchment-edge);
+}
+
+/* ---------- gain toasts (above the hand) ---------- */
+.toast-stack {
+  position: absolute; bottom: calc(100% + 8px); left: 0.8rem;
+  display: flex; flex-direction: column-reverse; gap: 0.4rem;
+  pointer-events: none; z-index: 12;
+}
+.toast {
+  display: flex; align-items: center; gap: 0.4rem;
+  background: var(--parchment); border: 2px solid var(--parchment-edge);
+  border-radius: 10px; padding: 0.35rem 0.7rem; font-weight: 700;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  animation: toast-pop 0.28s ease-out, toast-fade 0.5s ease-in 3.7s forwards;
+}
+.toast-vp { background: var(--hint); }
+.toast-plus { color: var(--forest); font-size: 1.15rem; line-height: 1; }
+.toast-item { font-variant-numeric: tabular-nums; }
+.toast-label { color: var(--ink-soft); font-weight: 600; font-size: 0.85rem; }
+@keyframes toast-pop { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes toast-fade { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+.hand { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.hand-card {
+  background: white; border: 1.5px solid var(--parchment-edge); border-radius: 8px;
+  padding: 0.25rem 0.5rem; font-weight: 600;
+}
+.hand-card[data-empty="true"] { opacity: 0.35; }
+.hand-card.dev { background: var(--fields); }
+.action-bar { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-left: auto; }
+.action-bar.dim { color: var(--ink-soft); font-style: italic; }
+
+.conn-banner, .winner-banner {
+  position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+  z-index: 10; padding: 0.4rem 1.2rem; border-radius: 0 0 10px 10px;
+  background: var(--fields); border: 2px solid var(--parchment-edge); border-top: none;
+  font-weight: 700;
+}
+.winner-banner { background: var(--hint); font-size: 1.1rem; }
+
+/* dice readout: pops when a new roll arrives (group remounts on value change) */
+.dice-readout {
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.35));
+  transform-box: fill-box; transform-origin: center;
+  animation: dice-pop 0.42s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+@keyframes dice-pop {
+  0% { opacity: 0; transform: scale(0.4) translateY(10px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) { .dice-readout { animation: none; } }
+
+/* board interactivity */
+.clickable { cursor: pointer; }
+.pulse { animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+
+/* ---------- trade panel ---------- */
+.trade-panel { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.trade-panel.urgent {
+  background: var(--hint); border: 2px solid var(--parchment-edge);
+  border-radius: 10px; padding: 0.4rem 0.7rem;
+}
+.trade-line em { font-style: normal; color: var(--ink-soft); padding: 0 0.3em; }
+.trade-note { font-size: 0.85rem; color: var(--ink-soft); font-style: italic; }
+.offer-builder { display: flex; flex-direction: column; gap: 0.4rem; }
+.offer-cols { display: flex; gap: 1rem; flex-wrap: wrap; }
+.offer-cols fieldset {
+  border: 1.5px solid var(--parchment-edge); border-radius: 8px;
+  display: flex; gap: 0.5rem; flex-wrap: wrap; padding: 0.3rem 0.5rem;
+}
+.offer-cols legend { font-weight: 700; font-size: 0.85rem; padding: 0 0.3em; }
+.stepper { display: flex; align-items: center; gap: 0.2rem; }
+.stepper button { padding: 0 0.55rem; border-radius: 6px; }
+.stepper b { min-width: 1.2ch; text-align: center; }
+.offer-actions { display: flex; gap: 0.5rem; align-items: center; }
+.bank-trades summary { cursor: pointer; font-weight: 600; }
+.bank-list { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.35rem; }
+
+/* ---------- modal (robber victim picker) ---------- */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 20;
+  background: rgba(20, 30, 40, 0.55);
+  display: grid; place-items: center;
+}
+.modal {
+  background: var(--parchment); border: 3px solid var(--parchment-edge);
+  border-radius: 14px; padding: 1rem 1.3rem;
+  display: flex; flex-direction: column; gap: 0.7rem;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+
+/* ---------- setup banner ---------- */
+.setup-banner {
+  position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+  z-index: 10; padding: 0.45rem 1.2rem; border-radius: 0 0 12px 12px;
+  background: var(--parchment); border: 2px solid var(--parchment-edge); border-top: none;
+  display: flex; flex-direction: column; gap: 0.1rem; text-align: center;
+  max-width: min(92vw, 34rem);
+}
+.setup-banner.urgent { background: var(--hint); }
+
+/* ---------- mobile: relieve the crowded footer (desktop untouched) ---------- */
+@media (max-width: 640px) {
+  footer { gap: 0.4rem; padding: 0.4rem 0.55rem; }
+  footer button { padding: 0.4rem 0.7rem; }
+  .hand { gap: 0.3rem; }
+  .hand-card { padding: 0.2rem 0.4rem; font-size: 0.85rem; }
+  .hand-card.dev { font-size: 0.78rem; }
+  /* Give the trade controls and action buttons their own full-width rows
+     instead of fighting the hand for space on one wrapping line. */
+  .trade-panel { width: 100%; }
+  .action-bar { margin-left: 0; width: 100%; }
+  /* Slimmer opponent cards up top so more fit before scrolling. */
+  .players { padding: 0.35rem; gap: 0.35rem; }
+  .player-card { min-width: 8rem; padding: 0.35rem 0.5rem; }
+  .player-stats { gap: 0.45rem; font-size: 0.8rem; }
+}
