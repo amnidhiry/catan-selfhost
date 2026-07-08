@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState, useRef } from "react";
 import { CatanClient, createRoom } from "./catanClient";
 import Board from "./Board";
 import TradePanel from "./TradePanel";
+import ChatPanel from "./ChatPanel";
 
 const RESOURCES = ["WOOD", "BRICK", "SHEEP", "WHEAT", "ORE"];
 const RES_ICON = { WOOD: "🪵", BRICK: "🧱", SHEEP: "🐑", WHEAT: "🌾", ORE: "🪨" };
@@ -310,6 +311,7 @@ export default function App() {
   const [conn, setConn] = useState("disconnected");
   const [victimPrompt, setVictimPrompt] = useState(null);
   const [toasts, setToasts] = useState([]);
+  const [chat, setChat] = useState([]);
   const clientRef = useRef(null);
   const prevHandRef = useRef(null);
   const toastIdRef = useRef(0);
@@ -352,6 +354,7 @@ export default function App() {
     const offs = [
       client.on("room_state", setRoom),
       client.on("state", setState),
+      client.on("chat", ({ entries }) => setChat(entries)),
       client.on("connection_status", ({ status }) => setConn(status)),
       client.on("error", (e) => console.warn("server:", e.reason)),
     ];
@@ -392,6 +395,7 @@ export default function App() {
              onChooseVictim={(coordinate, victims) => setVictimPrompt({ coordinate, victims })} />
       <VictimPicker prompt={victimPrompt} client={clientRef.current}
                     onClose={() => setVictimPrompt(null)} />
+      <ChatPanel chat={chat} client={clientRef.current} state={state} />
       <footer>
         <Toasts toasts={toasts} />
         <Hand hand={state.your_hand} />

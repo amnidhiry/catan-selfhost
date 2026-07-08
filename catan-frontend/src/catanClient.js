@@ -197,14 +197,17 @@ export class CatanClient {
   bankTrade(give, get) {
     this._send("bank_trade", { freqdeck: CatanClient.freqdeck(give, get) });
   }
-  makeOffer(give, get) {
-    this._send("make_offer", { freqdeck: CatanClient.freqdeck(give, get) });
-  }
-  /** trade: the 11-tuple echoed in state.playable_actions for ACCEPT/REJECT */
-  acceptOffer(trade) { this._send("accept_offer", { trade }); }
-  rejectOffer(trade) { this._send("reject_offer", { trade }); }
-  confirmOffer(trade) { this._send("confirm_offer", { trade }); }
-  cancelOffer() { this._send("cancel_offer"); }
+
+  // ---- chat & non-blocking player trades --------------------------------
+  // Domestic trades live in the chat feed instead of catanatron's blocking
+  // OFFER/DECIDE flow: propose an offer, anyone may accept (first wins) or
+  // ignore it, so play never stalls waiting on the table.
+  // give/get are {RESOURCE: count} objects, e.g. {WOOD: 2, ORE: 1}.
+
+  chatSend(text) { this._send("chat_send", { text }); }
+  proposeTrade(give, get) { this._send("trade_propose", { give, get }); }
+  acceptTrade(offerId) { this._send("trade_accept", { offer_id: offerId }); }
+  cancelTrade(offerId) { this._send("trade_cancel", { offer_id: offerId }); }
 }
 
 /**

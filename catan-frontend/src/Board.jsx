@@ -46,6 +46,7 @@ const PLAYER = {
 };
 
 const RES_ICON = { WOOD: "🪵", BRICK: "🧱", SHEEP: "🐑", WHEAT: "🌾", ORE: "🪨" };
+const PORT_FONT = 10; // one size for every port label (2:1 and 3:1 alike)
 
 // Standard die pip layout on a 3x3 grid (offsets in [-1,0,1]).
 const PIPS = {
@@ -95,14 +96,20 @@ function PortBoat({ nodes, resource, nodePx, islandCenter }) {
   const away = Math.atan2(mid.y - islandCenter.y, mid.x - islandCenter.x);
   const x = mid.x + Math.cos(away) * HEX_SIZE * 0.85;
   const y = mid.y + Math.sin(away) * HEX_SIZE * 0.85;
+  const label = resource ? `2:1 ${RES_ICON[resource] ?? resource[0]}` : "3:1";
   return (
     <g transform={`translate(${x},${y})`}>
       <line x1={a.x - x} y1={a.y - y} x2={0} y2={0} stroke="var(--rope)" strokeDasharray="3 3" />
       <line x1={b.x - x} y1={b.y - y} x2={0} y2={0} stroke="var(--rope)" strokeDasharray="3 3" />
       <path d="M -14 2 Q 0 12 14 2 L 10 -2 L -10 -2 Z" fill="var(--boat)" stroke="var(--ink-soft)" />
-      <text y={-6} textAnchor="middle" fontSize={resource ? 11 : 9} fontWeight={700} fill="var(--ink)">
-        {resource ? `2:1 ${RES_ICON[resource] ?? resource[0]}` : "3:1"}
-      </text>
+      {/* Parchment label chip (same background as the bottom banner). */}
+      <g transform="translate(0,-10)">
+        <rect x={-20} y={-9} width={40} height={18} rx={5}
+              fill="var(--parchment)" stroke="var(--ink-soft)" strokeWidth={1} />
+        <text y={4} textAnchor="middle" fontSize={PORT_FONT} fontWeight={700} fill="var(--ink)">
+          {label}
+        </text>
+      </g>
     </g>
   );
 }

@@ -79,6 +79,17 @@ async def broadcast_room(room: Room):
                 seat.connected = False
 
 
+async def broadcast_chat(room: Room):
+    """Push the full (capped) chat log — messages and trade offers — to everyone."""
+    payload = {"entries": room.chat_log}
+    for seat in room.seats.values():
+        if seat.connected and seat.ws is not None:
+            try:
+                await send(seat.ws, "chat", payload)
+            except Exception:
+                seat.connected = False
+
+
 async def drive_bots(room: Room):
     """Advance the game through any consecutive bot decision points until it's a
     human's turn (or the game is over), broadcasting after each so humans watch
@@ -228,12 +239,36 @@ async def game_socket(ws: WebSocket, room_code: str):
                     "rejoin_token": seat.rejoin_token,
                 })
                 await broadcast_room(room)
+                await send(ws, "chat", {"entries": room.chat_log})  # backfill feed
                 if room.phase != RoomPhase.LOBBY:
                     await broadcast_state(room)     # rejoin mid-game: full snapshot
                 continue
 
             if seat is None:
                 await send(ws, "error", {"reason": "join_first"})
+                continue
+
+            # -- chat & non-blocking player-to-player trades --
+            if mtype in ("chat_send", "trade_propose", "trade_accept", "trade_cancel"):
+                resources_changed = False
+                async with room.lock:
+                    try:
+                        if mtype == "chat_send":
+                            room.post_chat(seat.color, data.get("text", ""))
+                        elif mtype == "trade_propose":
+                            room.propose_trade(seat.color, data.get("give"), data.get("get"))
+                        elif mtype == "trade_accept":
+                            room.accept_trade(data["offer_id"], seat.color)
+                            resources_changed = True
+                        else:  # trade_cancel
+                            room.cancel_trade(data["offer_id"], seat.color)
+                        room.persist()
+                    except (ValueError, KeyError) as e:
+                        await send(ws, "error", {"reason": str(e)})
+                        continue
+                await broadcast_chat(room)
+                if resources_changed:
+                    await broadcast_state(room)  # a swap moved cards between hands
                 continue
 
             # -- host: manage bot seats (lobby only) --

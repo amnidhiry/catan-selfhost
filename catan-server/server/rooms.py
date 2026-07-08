@@ -19,14 +19,17 @@ from typing import Optional
 
 from catanatron import Game
 from catanatron.models.player import Color, Player
-from catanatron.models.enums import Action, ActionType, ActionPrompt
+from catanatron.models.enums import Action, ActionType, ActionPrompt, RESOURCES
 from catanatron.players.minimax import AlphaBetaPlayer
 from catanatron.players.weighted_random import WeightedRandomPlayer
+from catanatron.state_functions import player_key
 
 from .game_config import GAME_MODES, GameMode
 
 PERSIST_DIR = Path("/data/rooms")
 SEAT_ORDER = [Color.RED, Color.BLUE, Color.ORANGE, Color.WHITE]
+RESOURCE_NAMES = set(RESOURCES)
+CHAT_LOG_CAP = 200  # keep the wire/replay payload bounded
 
 # Bot difficulties the host can add to fill seats. AlphaBeta finishes games with
 # sub-second moves; WeightedRandom is instant but plays randomly. (ValueFunction
@@ -85,6 +88,10 @@ class Room:
     # color -> catanatron bot Player, populated at start()/restore(); the server
     # drives these seats' turns (see main.drive_bots). Not pickled directly.
     bot_players: dict = field(default_factory=dict)
+    # Per-session chat log — plain messages AND non-blocking trade offers, in
+    # one ordered list the client renders as a chat feed. Capped at CHAT_LOG_CAP.
+    chat_log: list = field(default_factory=list)
+    chat_seq: int = 0
 
     # --- lobby ---
     def next_free_color(self) -> Optional[Color]:
@@ -163,6 +170,121 @@ class Room:
     def bot_player(self, color: Color) -> Optional[Player]:
         return self.bot_players.get(color)
 
+    # --- chat & non-blocking trades ---------------------------------------
+    # Player-to-player trades run OUTSIDE catanatron's blocking OFFER/DECIDE
+    # flow: an offer is just a chat entry anyone may accept (first accept wins)
+    # or ignore, so nobody has to wait on a table-wide decision. Accepting
+    # executes an atomic resource swap between the two hands (the bank is not
+    # involved; totals are conserved). Bank/port trades stay engine actions.
+
+    def _append_chat(self, entry: dict) -> dict:
+        self.chat_seq += 1
+        entry["id"] = self.chat_seq
+        entry["ts"] = time.time()
+        self.chat_log.append(entry)
+        if len(self.chat_log) > CHAT_LOG_CAP:
+            del self.chat_log[: len(self.chat_log) - CHAT_LOG_CAP]
+        return entry
+
+    def _name_of(self, color: Color) -> str:
+        seat = self.seats.get(color)
+        return seat.name if seat else color.value
+
+    def post_chat(self, color: Color, text: str) -> dict:
+        text = str(text or "").strip()[:400]
+        if not text:
+            raise ValueError("empty message")
+        return self._append_chat(
+            {"kind": "msg", "color": color.value, "name": self._name_of(color), "text": text}
+        )
+
+    def _norm_deck(self, deck) -> dict:
+        out = {}
+        for key, val in (deck or {}).items():
+            name = str(key).upper()
+            try:
+                n = int(val)
+            except (TypeError, ValueError):
+                continue
+            if name in RESOURCE_NAMES and n > 0:
+                out[name] = n
+        return out
+
+    def _can_afford(self, color: Color, deck: dict) -> bool:
+        ps = self.game.state.player_state
+        key = player_key(self.game.state, color)
+        return all(ps[f"{key}_{r}_IN_HAND"] >= n for r, n in deck.items())
+
+    def _trades_allowed(self) -> bool:
+        return (
+            self.phase == RoomPhase.PLAYING
+            and self.game is not None
+            and not self.game.state.is_initial_build_phase
+            and not self.game.state.is_discarding
+        )
+
+    def propose_trade(self, color: Color, give, get) -> dict:
+        if not self._trades_allowed():
+            raise ValueError("trades aren't open right now")
+        give, get = self._norm_deck(give), self._norm_deck(get)
+        if not give or not get:
+            raise ValueError("offer must give and get at least one card")
+        if set(give) & set(get):
+            raise ValueError("can't give and get the same resource")
+        if not self._can_afford(color, give):
+            raise ValueError("you don't have those cards")
+        return self._append_chat({
+            "kind": "trade", "color": color.value, "name": self._name_of(color),
+            "give": give, "get": get,
+            "status": "open", "accepted_by": None, "accepted_name": None,
+        })
+
+    def _find_trade(self, offer_id) -> Optional[dict]:
+        for entry in self.chat_log:
+            if entry.get("kind") == "trade" and entry["id"] == offer_id:
+                return entry
+        return None
+
+    def accept_trade(self, offer_id, responder: Color) -> dict:
+        entry = self._find_trade(offer_id)
+        if entry is None or entry["status"] != "open":
+            raise ValueError("that offer is no longer open")
+        if not self._trades_allowed():
+            raise ValueError("trades aren't open right now")
+        proposer = Color[entry["color"]]
+        if responder == proposer:
+            raise ValueError("can't accept your own offer")
+        give, get = entry["give"], entry["get"]  # proposer gives `give`, wants `get`
+        if not self._can_afford(proposer, give):
+            entry["status"] = "cancelled"  # proposer spent the cards meanwhile
+            raise ValueError("offer expired — proposer no longer has those cards")
+        if not self._can_afford(responder, get):
+            raise ValueError("you don't have those cards")
+        self._swap(proposer, give, responder, get)
+        entry["status"] = "done"
+        entry["accepted_by"] = responder.value
+        entry["accepted_name"] = self._name_of(responder)
+        return entry
+
+    def cancel_trade(self, offer_id, color: Color) -> dict:
+        entry = self._find_trade(offer_id)
+        if entry is None or entry["status"] != "open":
+            raise ValueError("that offer is no longer open")
+        if Color[entry["color"]] != color:
+            raise ValueError("only the proposer can cancel")
+        entry["status"] = "cancelled"
+        return entry
+
+    def _swap(self, a_color: Color, a_gives: dict, b_color: Color, b_gives: dict) -> None:
+        ps = self.game.state.player_state
+        ak, bk = player_key(self.game.state, a_color), player_key(self.game.state, b_color)
+        for r, n in a_gives.items():
+            ps[f"{ak}_{r}_IN_HAND"] -= n
+            ps[f"{bk}_{r}_IN_HAND"] += n
+        for r, n in b_gives.items():
+            ps[f"{bk}_{r}_IN_HAND"] -= n
+            ps[f"{ak}_{r}_IN_HAND"] += n
+
     @property
     def seating(self) -> list[Color]:
         if self.game is None:
@@ -238,6 +360,8 @@ class Room:
             },
             "seq": self.seq,
             "bonus_start": self.bonus_start,
+            "chat_log": self.chat_log,
+            "chat_seq": self.chat_seq,
         }
         (PERSIST_DIR / f"{self.code}.pkl").write_bytes(pickle.dumps(snapshot))
 
@@ -250,6 +374,8 @@ class Room:
         room.game = snap["game"]
         room.seq = snap["seq"]
         room.bonus_start = snap.get("bonus_start", False)
+        room.chat_log = snap.get("chat_log", [])
+        room.chat_seq = snap.get("chat_seq", 0)
         for color, s in snap["seats"].items():
             is_bot = s.get("is_bot", False)
             room.seats[color] = Seat(
