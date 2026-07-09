@@ -426,6 +426,7 @@ export default function App() {
   const [victimPrompt, setVictimPrompt] = useState(null);
   const [toasts, setToasts] = useState([]);
   const [chat, setChat] = useState([]);
+  const [pending, setPending] = useState(null); // staged placement, not yet sent
   const clientRef = useRef(null);
   const prevHandRef = useRef(null);
   const toastIdRef = useRef(0);
@@ -482,6 +483,33 @@ export default function App() {
     [room]
   );
 
+  // --- placement staging: pick a spot (ghost), move it freely, then confirm ---
+  const samePlacement = (a, b) =>
+    !!a && !!b && a.kind === b.kind &&
+    (a.kind === "road"
+      ? [...a.edge].sort().join() === [...b.edge].sort().join()
+      : a.node === b.node);
+
+  const commitPlacement = (p) => {
+    const c = clientRef.current;
+    if (p.kind === "settlement") c.placeSettlement(p.node);
+    else if (p.kind === "city") c.placeCity(p.node);
+    else if (p.kind === "road") c.placeRoad(p.edge);
+    setPending(null);
+  };
+  // Tap a spot to stage it; tap the same staged spot again to commit.
+  const handleBoardPick = (p) =>
+    samePlacement(pending, p) ? commitPlacement(p) : setPending(p);
+
+  // Drop a stale staged placement if it's no longer legal (turn passed, etc.).
+  useEffect(() => {
+    if (!pending || !state) return;
+    const myTurn = state.current_player === state.your_color;
+    const types = new Set((state.playable_actions ?? []).map((a) => a.type));
+    const need = { settlement: "BUILD_SETTLEMENT", city: "BUILD_CITY", road: "BUILD_ROAD" }[pending.kind];
+    if (!myTurn || !types.has(need)) setPending(null);
+  }, [state, pending]);
+
   if (!session) return <Lobby onEnter={setSession} />;
 
   if (!state)
@@ -509,6 +537,7 @@ export default function App() {
                    yourColor={state.your_color}
                    yourVp={state.your_hand?.actual_victory_points} />
       <Board state={state} client={clientRef.current}
+             pending={pending} onPick={handleBoardPick}
              onChooseVictim={(coordinate, victims) => setVictimPrompt({ coordinate, victims })} />
       <VictimPicker prompt={victimPrompt} client={clientRef.current}
                     onClose={() => setVictimPrompt(null)} />
@@ -516,6 +545,14 @@ export default function App() {
       <ChatPanel chat={chat} client={clientRef.current} state={state} />
       <footer>
         <Toasts toasts={toasts} />
+        {pending && (
+          <div className="placement-confirm">
+            <span>Place your {pending.kind} here?</span>
+            <button className="primary" onClick={() => commitPlacement(pending)}>✓ Confirm</button>
+            <button onClick={() => setPending(null)}>✕ Cancel</button>
+            <span className="hint-text">or tap another glowing spot to move it</span>
+          </div>
+        )}
         <TurnClock deadline={state.turn_deadline} />
         <Hand hand={state.your_hand} />
         <DiscardPanel state={state} client={clientRef.current} />

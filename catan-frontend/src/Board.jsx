@@ -49,6 +49,9 @@ const PLAYER = {
 
 const RES_ICON = { WOOD: "🪵", BRICK: "🧱", SHEEP: "🐑", WHEAT: "🌾", ORE: "🪨" };
 const PORT_FONT = 10; // one size for every port label (2:1 and 3:1 alike)
+const SETTLEMENT_PATH = "M -9 8 L -9 -3 L 0 -11 L 9 -3 L 9 8 Z";
+const CITY_PATH = "M -11 9 L -11 -2 L -4 -8 L -4 -13 L 3 -13 L 3 -4 L 11 -4 L 11 9 Z";
+const edgeKeyOf = (e) => [...e].sort((x, y) => x - y).join("-");
 
 // Standard die pip layout on a 3x3 grid (offsets in [-1,0,1]).
 const PIPS = {
@@ -116,7 +119,7 @@ function PortBoat({ nodes, resource, nodePx, islandCenter }) {
   );
 }
 
-export default function Board({ state, client, onChooseVictim }) {
+export default function Board({ state, client, onChooseVictim, pending, onPick }) {
   const { board, playable_actions } = state;
   const layout = useMemo(() => computeLayout(board.tiles), [board.tiles]);
   const { nodePx, viewBox } = layout;
@@ -227,37 +230,59 @@ export default function Board({ state, client, onChooseVictim }) {
       {targets.roadEdges.map((e) => {
         if (builtRoads.has(edgeKey(e))) return null;
         const [a, b] = e.map((id) => nodePx[id]);
+        const staged = pending?.kind === "road" && edgeKeyOf(pending.edge) === edgeKey(e);
         return <line key={`hint-${edgeKey(e)}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
                      className="clickable pulse" stroke="var(--hint)" strokeWidth={9}
-                     strokeLinecap="round" opacity={0.55}
-                     onClick={() => client.placeRoad(e)} />;
+                     strokeLinecap="round" opacity={staged ? 0 : 0.55}
+                     onClick={() => onPick({ kind: "road", edge: e })} />;
       })}
 
       {/* buildings + buildable node hints */}
       {board.buildings.map((b) => {
         const p = nodePx[b.node_id];
-        return b.type === "SETTLEMENT" ? (
-          <path key={b.node_id} transform={`translate(${p.x},${p.y})`}
-                d="M -9 8 L -9 -3 L 0 -11 L 9 -3 L 9 8 Z"
-                fill={PLAYER[b.color]} stroke="var(--ink)" strokeWidth={1.5} />
-        ) : (
-          <path key={b.node_id} transform={`translate(${p.x},${p.y})`}
-                d="M -11 9 L -11 -2 L -4 -8 L -4 -13 L 3 -13 L 3 -4 L 11 -4 L 11 9 Z"
-                fill={PLAYER[b.color]} stroke="var(--ink)" strokeWidth={1.5} />
-        );
+        return <path key={b.node_id} transform={`translate(${p.x},${p.y})`}
+                     d={b.type === "SETTLEMENT" ? SETTLEMENT_PATH : CITY_PATH}
+                     fill={PLAYER[b.color]} stroke="var(--ink)" strokeWidth={1.5} />;
       })}
       {[...targets.settlementNodes].map((id) => {
         const p = nodePx[id];
+        const staged = pending?.kind === "settlement" && pending.node === id;
         return <circle key={`sn-${id}`} cx={p.x} cy={p.y} r={11} className="clickable pulse"
-                       fill="var(--hint)" opacity={0.6}
-                       onClick={() => client.placeSettlement(id)} />;
+                       fill="var(--hint)" opacity={staged ? 0 : 0.6}
+                       onClick={() => onPick({ kind: "settlement", node: id })} />;
       })}
       {[...targets.cityNodes].map((id) => {
         const p = nodePx[id];
+        const staged = pending?.kind === "city" && pending.node === id;
         return <circle key={`cn-${id}`} cx={p.x} cy={p.y} r={13} className="clickable pulse"
-                       fill="none" stroke="var(--hint)" strokeWidth={4}
-                       onClick={() => client.placeCity(id)} />;
+                       fill="none" stroke="var(--hint)" strokeWidth={staged ? 0 : 4}
+                       onClick={() => onPick({ kind: "city", node: id })} />;
       })}
+
+      {/* Staged (not-yet-committed) placement: a ghost piece in your colour you
+          can move by tapping elsewhere, or confirm. Tapping it again commits. */}
+      {pending && (() => {
+        const mine = PLAYER[state.your_color] ?? "var(--hint)";
+        if (pending.kind === "road") {
+          const [a, b] = pending.edge.map((id) => nodePx[id]);
+          if (!a || !b) return null;
+          return (
+            <line className="clickable ghost-piece" x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                  stroke={mine} strokeWidth={9} strokeLinecap="round"
+                  onClick={() => onPick(pending)} />
+          );
+        }
+        const p = nodePx[pending.node];
+        if (!p) return null;
+        return (
+          <g className="clickable ghost-piece" transform={`translate(${p.x},${p.y})`}
+             onClick={() => onPick(pending)}>
+            <circle r={16} fill="none" stroke={mine} strokeWidth={2} className="pulse" />
+            <path d={pending.kind === "city" ? CITY_PATH : SETTLEMENT_PATH}
+                  fill={mine} stroke="var(--ink)" strokeWidth={1.5} />
+          </g>
+        );
+      })()}
 
       {/* Dice readout, bottom-right of the board. Remounts on each new roll
           (key changes) so the pop animation re-fires. */}

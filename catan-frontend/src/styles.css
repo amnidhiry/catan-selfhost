@@ -195,6 +195,15 @@ footer {
 }
 @media (prefers-reduced-motion: reduce) { .dice-readout { animation: none; } }
 
+/* staged placement ghost + confirm bar */
+.ghost-piece { opacity: 0.6; }
+.placement-confirm {
+  width: 100%; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  padding: 0.45rem 0.7rem; border-radius: 10px;
+  background: var(--hint); border: 2px solid var(--parchment-edge); color: var(--ink);
+  font-weight: 700;
+}
+
 /* board interactivity */
 .clickable { cursor: pointer; }
 .pulse { animation: pulse 1.2s ease-in-out infinite; }
