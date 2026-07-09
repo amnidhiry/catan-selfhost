@@ -16,7 +16,7 @@ RUN apt-get update \
 # and re-run the smoke tests after.
 ARG CATANATRON_REF=82aae93ab1f7c267218be0566df573ce477ec3d8
 RUN pip install --no-cache-dir \
-    "fastapi>=0.110" "uvicorn[standard]>=0.29" \
+    "fastapi>=0.110" "uvicorn[standard]>=0.29" "aenum>=3.1" \
     "git+https://github.com/bcollazo/catanatron.git@${CATANATRON_REF}"
 
 COPY server/ server/

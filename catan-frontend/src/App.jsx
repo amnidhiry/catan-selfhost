@@ -77,7 +77,7 @@ function Seats({ room, isHost, onStart, onAddBot, onRemoveBot }) {
   const eligible = room.modes.filter(
     (m) => room.players.length >= m.min && room.players.length <= m.max
   );
-  const seatsFull = room.players.length >= 4;
+  const seatsFull = room.players.length >= 6;
   return (
     <main className="seats">
       <TokenCode code={room.code} />

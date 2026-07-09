@@ -17,6 +17,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
+from . import colors  # noqa: F401  — extends Color to 6 members (import for side effect)
+
 from catanatron import Game
 from catanatron.models.player import Color, Player
 from catanatron.models.enums import Action, ActionType, ActionPrompt, RESOURCES
@@ -27,7 +29,9 @@ from catanatron.state_functions import player_key
 from .game_config import GAME_MODES, GameMode
 
 PERSIST_DIR = Path("/data/rooms")
-SEAT_ORDER = [Color.RED, Color.BLUE, Color.ORANGE, Color.WHITE]
+SEAT_ORDER = [
+    Color.RED, Color.BLUE, Color.ORANGE, Color.WHITE, Color.GREEN, Color.BROWN,
+]
 RESOURCE_NAMES = set(RESOURCES)
 CHAT_LOG_CAP = 200  # keep the wire/replay payload bounded
 
@@ -247,6 +251,40 @@ class Room:
             "give": give, "get": get,
             "status": "open", "accepted_by": None, "accepted_name": None,
         })
+
+    # Cheap trade heuristic for bots: a resource is worth more the fewer you
+    # hold (marginal utility), with wheat/ore a touch premium. A bot accepts
+    # only a clearly favourable swap — no search, just arithmetic.
+    _TRADE_WEIGHTS = {"WOOD": 1.0, "BRICK": 1.0, "SHEEP": 0.9, "WHEAT": 1.1, "ORE": 1.1}
+
+    def bot_wants_trade(self, bot_color: Color, offer: dict) -> bool:
+        give = offer["get"]   # the bot would GIVE what the proposer wants
+        recv = offer["give"]  # ...and RECEIVE what the proposer offers
+        if not self._can_afford(bot_color, give):
+            return False
+        # Never shed more cards than you gain — a 3-for-1 is bad however scarce
+        # the single card is (the bank never does worse than 4-for-1).
+        if sum(give.values()) > sum(recv.values()):
+            return False
+        ps = self.game.state.player_state
+        key = player_key(self.game.state, bot_color)
+        def value(r):  # scarcer in hand -> more valuable to the bot
+            return self._TRADE_WEIGHTS[r] / (1 + ps[f"{key}_{r}_IN_HAND"])
+        recv_val = sum(value(r) * n for r, n in recv.items())
+        give_val = sum(value(r) * n for r, n in give.items())
+        return recv_val > give_val * 1.15  # only take a clearly good deal
+
+    def first_bot_to_accept(self, offer_id) -> Optional[Color]:
+        """The first bot (in seat order) willing to take this open offer, if any."""
+        offer = self._find_trade(offer_id)
+        if offer is None or offer["status"] != "open":
+            return None
+        proposer = Color[offer["color"]]
+        for color in SEAT_ORDER:
+            seat = self.seats.get(color)
+            if seat and seat.is_bot and color != proposer and self.bot_wants_trade(color, offer):
+                return color
+        return None
 
     def _find_trade(self, offer_id) -> Optional[dict]:
         for entry in self.chat_log:

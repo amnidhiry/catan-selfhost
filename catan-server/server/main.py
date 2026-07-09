@@ -91,6 +91,26 @@ async def broadcast_chat(room: Room):
                 seat.connected = False
 
 
+BOT_TRADE_THINK_SECONDS = 2.5  # give humans first dibs before a bot grabs it
+
+
+async def bot_consider_offer(room: Room, offer_id: int):
+    """After a short 'thinking' pause (so humans can accept first), let the first
+    willing bot take an open chat offer. One arithmetic pass per bot — cheap."""
+    await asyncio.sleep(BOT_TRADE_THINK_SECONDS)
+    async with room.lock:
+        taker = room.first_bot_to_accept(offer_id)
+        if taker is None:
+            return
+        try:
+            room.accept_trade(offer_id, taker)
+        except (ValueError, KeyError):
+            return
+        room.persist()
+    await broadcast_chat(room)
+    await broadcast_state(room)  # the swap moved cards between hands
+
+
 async def start_turn_timer(room: Room):
     """If a per-turn timer is on, arm a watcher for the current human turn.
     On expiry it force-advances the turn (see Room.force_advance_turn). Stale
@@ -281,12 +301,15 @@ async def game_socket(ws: WebSocket, room_code: str):
             # -- chat & non-blocking player-to-player trades --
             if mtype in ("chat_send", "trade_propose", "trade_accept", "trade_cancel"):
                 resources_changed = False
+                new_offer_id = None
                 async with room.lock:
                     try:
                         if mtype == "chat_send":
                             room.post_chat(seat.color, data.get("text", ""))
                         elif mtype == "trade_propose":
-                            room.propose_trade(seat.color, data.get("give"), data.get("get"))
+                            new_offer_id = room.propose_trade(
+                                seat.color, data.get("give"), data.get("get")
+                            )["id"]
                         elif mtype == "trade_accept":
                             room.accept_trade(data["offer_id"], seat.color)
                             resources_changed = True
@@ -299,6 +322,9 @@ async def game_socket(ws: WebSocket, room_code: str):
                 await broadcast_chat(room)
                 if resources_changed:
                     await broadcast_state(room)  # a swap moved cards between hands
+                # Let bots mull a fresh offer (they accept after a short delay).
+                if new_offer_id is not None and any(s.is_bot for s in room.seats.values()):
+                    asyncio.create_task(bot_consider_offer(room, new_offer_id))
                 continue
 
             # -- host: manage bot seats (lobby only) --

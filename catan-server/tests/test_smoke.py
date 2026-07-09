@@ -15,9 +15,10 @@ from catanatron.models.player import Color
 
 
 def play_one_game(mode_key: str, seats: list[str]) -> Room:
+    from server.rooms import SEAT_ORDER
+
     room = Room(code="TEST", host_token="t")
-    colors = [Color.RED, Color.BLUE, Color.ORANGE, Color.WHITE]
-    for name, color in zip(seats, colors):
+    for name, color in zip(seats, SEAT_ORDER):
         room.seats[color] = Seat(name=name, color=color, rejoin_token=name)
     room.start(mode_key)
 
@@ -42,6 +43,13 @@ def test_standard_completes():
     room = play_one_game("standard", ["a", "b", "c", "d"])
     assert room.game.winning_color() is not None
     print(f"standard winner: {room.game.winning_color()}")
+
+
+def test_expansion_6p_completes():
+    room = play_one_game("expansion", ["a", "b", "c", "d", "e", "f"])
+    assert len(room.seats) == 6
+    assert room.game.winning_color() is not None
+    print(f"expansion 6p winner: {room.game.winning_color()}")
 
 
 def test_bot_game_completes():
@@ -90,6 +98,7 @@ if __name__ == "__main__":
     random.seed(42)
     test_mini_2p_completes()
     test_standard_completes()
+    test_expansion_6p_completes()
     test_bot_game_completes()
     test_serializer_hides_opponent_hands()
     print("ALL SMOKE TESTS PASSED")

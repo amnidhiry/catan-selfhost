@@ -43,6 +43,8 @@ const PLAYER = {
   BLUE: "#2c5f8a",
   ORANGE: "#d68227",
   WHITE: "#efe9dc",
+  GREEN: "#4a9d5f",
+  BROWN: "#7a4a2a",
 };
 
 const RES_ICON = { WOOD: "🪵", BRICK: "🧱", SHEEP: "🐑", WHEAT: "🌾", ORE: "🪨" };

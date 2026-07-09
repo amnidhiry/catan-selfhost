@@ -23,6 +23,8 @@
   --p-blue: #2c5f8a;
   --p-orange: #d68227;
   --p-white: #efe9dc;
+  --p-green: #4a9d5f;
+  --p-brown: #7a4a2a;
   /* One small-text size for all secondary UI (hints, stats, notes, labels). */
   --fs-sm: 0.85rem;
 }

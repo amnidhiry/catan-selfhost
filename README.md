@@ -17,21 +17,25 @@ in the browser — no accounts, no internet round-trips, no ads. Built on the
 |---|---|---|---|
 | **Duel** (`mini_2p`) | 2 | 7-hex island, 3 ports | 8 VP |
 | **Standard** | 3–4 | classic 19-hex | 10 VP |
+| **Expansion** (`expansion`) | 5–6 | 37-hex XL island, 12 ports | 10 VP |
+
+**5–6 players.** catanatron's `Color` enum ships with only 4 members, but its
+core state is player-count agnostic — so at startup we extend the enum to 6
+(`aenum`, no fork; see [`colors.py`](catan-server/server/colors.py)) and add a
+larger, port-validated board ([`game_config.py`](catan-server/server/game_config.py)).
+The official "special building phase" isn't modelled — the expansion board plays
+with standard turn order (see [Roadmap](#roadmap)).
 
 **Bots.** The host can add AI opponents (powered by catanatron's bots) to fill
 seats — they count as players, so 2 humans + 1–2 bots gives you a full-board
 standard game, the best-feeling way to play with only two people. Difficulty:
 *Normal* (AlphaBeta search, plays a strong game, sub-second moves) or *Easy*
-(random). Bots also let 3 friends play a 4-player game.
+(random). Bots also evaluate and accept chat trade offers (a cheap heuristic —
+they take a clearly favourable, card-count-neutral swap).
 
-> **5–6 players is not supported yet.** The catanatron engine is hard-capped at
-> 4 players (its `Color` enum has only RED/BLUE/ORANGE/WHITE). Supporting 5–6
-> requires forking the engine to add colors, a larger map template, and the
-> "special building phase." Tracked in [Roadmap](#roadmap).
-
-**House rules.** The host can toggle *Generous start* (collect starting
-resources from **both** initial settlements, not just the second — a deviation
-from official rules) before starting.
+**House rules.** Before starting, the host can toggle *Generous start* (collect
+starting resources from **both** initial settlements) and an optional **turn
+timer** (60/90/120s) that auto-ends a turn if the player stalls after rolling.
 
 ## Quick start (LAN)
 
@@ -130,7 +134,7 @@ Full message-by-message protocol:
 
 ## Roadmap
 
-- **5–6 players** — fork catanatron: extend the `Color` enum, add a 5–6 player
-  `MapTemplate`, and implement the special building phase.
+- **5–6 special building phase** — the expansion board plays with standard turn
+  order; the official post-turn "special building phase" isn't modelled yet.
 - **Longest-road tie-after-break** edge case: add a unit test.
 - **Per-player trade targeting** — offers currently go to the whole table.
