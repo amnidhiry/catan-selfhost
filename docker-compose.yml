@@ -18,6 +18,11 @@ services:
     restart: unless-stopped
     volumes:
       - catan_rooms:/data                # game snapshots survive restarts
+    environment:
+      # AI bot chat (task #11). Put ANTHROPIC_API_KEY in a local .env file
+      # next to this compose file (it's gitignored). Bots fall back to canned
+      # deflections if it's unset, so the game still runs without a key.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     expose:
       - "8000"                           # internal only; reached via the frontend proxy
 
