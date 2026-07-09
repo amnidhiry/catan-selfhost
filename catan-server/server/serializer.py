@@ -13,6 +13,7 @@ from typing import Optional
 from catanatron import Game
 from catanatron.models.player import Color
 from catanatron.models.enums import RESOURCES, DEVELOPMENT_CARDS, ActionType
+from catanatron.models.map import PORT_DIRECTION_TO_NODEREFS
 
 DEV_CARD_TYPES = list(DEVELOPMENT_CARDS)
 
@@ -39,14 +40,18 @@ def serialize_board(game: Game) -> dict:
         )
     ports = []
     for port in board.map.ports_by_id.values():
+        # A port's DIRECTION picks the exact two coastal nodes that grant its
+        # trade rate. Intersecting all six port-hex nodes with land nodes can
+        # yield a spurious third node (6 of 9 standard ports) — a spot that
+        # renders as a port landing but does NOT enable trading. Send exactly
+        # the two trade nodes so the dotted lines match where a settlement works.
+        a_ref, b_ref = PORT_DIRECTION_TO_NODEREFS[port.direction]
         ports.append(
             {
                 "id": port.id,
                 "resource": port.resource,  # None => 3:1 generic
                 "direction": port.direction.value,
-                "nodes": sorted(
-                    set(port.nodes.values()) & set(board.map.land_nodes)
-                ),
+                "nodes": [port.nodes[a_ref], port.nodes[b_ref]],
             }
         )
     return {

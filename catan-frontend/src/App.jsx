@@ -144,11 +144,15 @@ function Seats({ room, isHost, onStart, onAddBot, onRemoveBot }) {
   );
 }
 
-function PlayerPanel({ players, current, waitingOn, names }) {
+function PlayerPanel({ players, current, waitingOn, names, yourColor, yourVp }) {
   return (
     <aside className="players">
       {players.map((p) => {
         const seat = names?.[p.color];
+        // Your own hidden VP-card points count for YOUR eyes (public VP hides
+        // them until someone wins). Opponents stay on their public total.
+        const isYou = p.color === yourColor;
+        const vp = isYou && yourVp != null ? yourVp : p.public_victory_points;
         return (
         <div key={p.color}
              className={`player-card ${p.color === current ? "active" : ""}`}
@@ -156,7 +160,7 @@ function PlayerPanel({ players, current, waitingOn, names }) {
           <div className="player-head">
             <span className="seat-dot" />
             <strong>{seat?.is_bot ? "🤖 " : ""}{seat?.name ?? p.color}</strong>
-            <span className="vp">{p.public_victory_points}★</span>
+            <span className="vp" title={isYou ? "includes your hidden VP cards" : undefined}>{vp}★</span>
           </div>
           <div className="player-stats">
             <span title="resource cards">🂠 {p.resource_count}</span>
@@ -306,11 +310,66 @@ function TurnClock({ deadline }) {
   );
 }
 
+const RES_LABEL = (r) => r[0] + r.slice(1).toLowerCase();
+const sameMulti = (a, b) =>
+  a.length === b.length && [...a].sort().join() === [...b].sort().join();
+
+/** Modal for dev cards that need a choice: Monopoly (pick 1) / Year of Plenty
+ *  (pick 2, may repeat). Options come straight from playable_actions, so only
+ *  legal picks (e.g. resources the bank still has for YoP) are offered. */
+function DevCardModal({ mode, actions, client, onClose }) {
+  const [sel, setSel] = useState([]); // for year_of_plenty
+  if (mode === "monopoly") {
+    const avail = new Set(actions.map((a) => a.value));
+    return (
+      <div className="modal-backdrop" onClick={onClose}>
+        <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <b>Monopoly — claim everyone's cards of one resource:</b>
+          <div className="offer-actions">
+            {RESOURCES.map((r) => (
+              <button key={r} className="primary" disabled={!avail.has(r)}
+                      onClick={() => { client.playMonopoly(r); onClose(); }}>
+                {RES_ICON[r]} {RES_LABEL(r)}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  // year of plenty: choose two (duplicates allowed)
+  const match = actions.find((a) => sameMulti(a.value, sel));
+  const add = (r) => setSel((s) => (s.length < 2 ? [...s, r] : s));
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <b>Year of Plenty — take any two from the bank:</b>
+        <div className="hand">
+          {RESOURCES.map((r) => (
+            <button key={r} disabled={sel.length >= 2} onClick={() => add(r)}>
+              {RES_ICON[r]} {RES_LABEL(r)}
+            </button>
+          ))}
+        </div>
+        <div className="trade-line">
+          Chosen: {sel.length ? sel.map((r) => RES_ICON[r]).join(" ") : "—"}
+        </div>
+        <div className="offer-actions">
+          <button className="primary" disabled={!match}
+                  onClick={() => { client.playYearOfPlenty(match.value); onClose(); }}>
+            Take these
+          </button>
+          <button onClick={() => setSel([])}>Reset</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ActionBar({ state, client, names }) {
-  const mine = useMemo(() => {
-    const s = new Set((state.playable_actions ?? []).map((a) => a.type));
-    return s;
-  }, [state.playable_actions]);
+  const actions = state.playable_actions ?? [];
+  const mine = useMemo(() => new Set(actions.map((a) => a.type)), [actions]);
+  const [devModal, setDevModal] = useState(null); // "monopoly" | "year_of_plenty"
   const myTurn = state.current_player === state.your_color;
 
   if (!myTurn) {
@@ -322,10 +381,19 @@ function ActionBar({ state, client, names }) {
     <div className="action-bar">
       {mine.has("ROLL") && <button className="primary" onClick={() => client.rollDice()}>Roll dice</button>}
       {mine.has("BUY_DEVELOPMENT_CARD") && <button onClick={() => client.buyDevCard()}>Buy dev card</button>}
-      {mine.has("PLAY_KNIGHT_CARD") && <button onClick={() => client.playKnight()}>🐴 Play knight</button>}
+      {mine.has("PLAY_KNIGHT_CARD") && <button onClick={() => client.playKnight()}>🐴 Knight</button>}
+      {mine.has("PLAY_ROAD_BUILDING") && <button onClick={() => client.playRoadBuilding()}>🛣️ Road building</button>}
+      {mine.has("PLAY_MONOPOLY") && <button onClick={() => setDevModal("monopoly")}>💰 Monopoly</button>}
+      {mine.has("PLAY_YEAR_OF_PLENTY") && <button onClick={() => setDevModal("year_of_plenty")}>🎁 Year of Plenty</button>}
       {mine.has("END_TURN") && <button onClick={() => client.endTurn()}>End turn</button>}
       {(mine.has("BUILD_SETTLEMENT") || mine.has("BUILD_ROAD") || mine.has("BUILD_CITY")) && (
         <span className="hint-text">Tap a glowing spot on the board to build.</span>
+      )}
+      {devModal && (
+        <DevCardModal mode={devModal} client={client}
+                      actions={actions.filter((a) =>
+                        a.type === (devModal === "monopoly" ? "PLAY_MONOPOLY" : "PLAY_YEAR_OF_PLENTY"))}
+                      onClose={() => setDevModal(null)} />
       )}
     </div>
   );
@@ -417,7 +485,9 @@ export default function App() {
       )}
       <SetupBanner state={state} names={nameByColor} />
       <PlayerPanel players={state.players} current={state.current_player}
-                   waitingOn={state.waiting_on} names={nameByColor} />
+                   waitingOn={state.waiting_on} names={nameByColor}
+                   yourColor={state.your_color}
+                   yourVp={state.your_hand?.actual_victory_points} />
       <Board state={state} client={clientRef.current}
              onChooseVictim={(coordinate, victims) => setVictimPrompt({ coordinate, victims })} />
       <VictimPicker prompt={victimPrompt} client={clientRef.current}

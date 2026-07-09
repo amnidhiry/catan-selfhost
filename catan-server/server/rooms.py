@@ -308,6 +308,7 @@ class Room:
         if not self._can_afford(responder, get):
             raise ValueError("you don't have those cards")
         self._swap(proposer, give, responder, get)
+        self._refresh_playable_actions()  # trade happened outside game.execute()
         entry["status"] = "done"
         entry["accepted_by"] = responder.value
         entry["accepted_name"] = self._name_of(responder)
@@ -321,6 +322,15 @@ class Room:
             raise ValueError("only the proposer can cancel")
         entry["status"] = "cancelled"
         return entry
+
+    def _refresh_playable_actions(self) -> None:
+        """catanatron caches game.playable_actions and only recomputes it inside
+        game.execute(). Chat trades change hands OUTSIDE the engine, so recompute
+        by hand — otherwise the current player's build options stay stale (you'd
+        get resources from a trade but no new place-road/settlement option)."""
+        from catanatron.models.actions import generate_playable_actions
+
+        self.game.playable_actions = generate_playable_actions(self.game.state)
 
     def _swap(self, a_color: Color, a_gives: dict, b_color: Color, b_gives: dict) -> None:
         ps = self.game.state.player_state
