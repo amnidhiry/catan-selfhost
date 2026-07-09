@@ -116,6 +116,8 @@ function Seats({ room, isHost, onStart, onAddBot, onRemoveBot }) {
             <span>Turn timer</span>
             <select value={turnTimer} onChange={(e) => setTurnTimer(Number(e.target.value))}>
               <option value={0}>Off</option>
+              <option value={30}>30 seconds</option>
+              <option value={45}>45 seconds</option>
               <option value={60}>60 seconds</option>
               <option value={90}>90 seconds</option>
               <option value={120}>120 seconds</option>
@@ -291,6 +293,23 @@ function Toasts({ toasts }) {
         </div>
       ))}
     </div>
+  );
+}
+
+function JoinCode({ code }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard?.writeText(code)
+      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); })
+      .catch(() => {});
+  };
+  return (
+    <button className="join-code" onClick={copy}
+            title="Room code — click to copy so a disconnected player can rejoin">
+      <span className="join-code-label">Room</span>
+      <span className="join-code-value">{code}</span>
+      {copied && <span className="join-code-copied">copied ✓</span>}
+    </button>
   );
 }
 
@@ -477,6 +496,7 @@ export default function App() {
 
   return (
     <div className="game">
+      <JoinCode code={session.code} />
       {conn !== "connected" && <div className="conn-banner">Reconnecting…</div>}
       {state.winner && (
         <div className="winner-banner">
