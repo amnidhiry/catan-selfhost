@@ -148,7 +148,9 @@ class Room:
 
     # --- game start ---
     def start(self, mode_key: str, bonus_start: bool = False, turn_timer_seconds: int = 0):
-        mode = GAME_MODES[mode_key]
+        mode = GAME_MODES.get(mode_key)
+        if mode is None or mode.hidden:
+            raise ValueError("that game mode isn't available")
         n = len(self.seats)
         if not (mode.min_players <= n <= mode.max_players):
             raise ValueError(

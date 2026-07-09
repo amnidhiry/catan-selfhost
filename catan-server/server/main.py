@@ -70,6 +70,7 @@ async def broadcast_room(room: Room):
         "modes": [
             {"key": m.key, "label": m.label, "min": m.min_players, "max": m.max_players}
             for m in GAME_MODES.values()
+            if not m.hidden
         ],
     }
     for seat in room.seats.values():

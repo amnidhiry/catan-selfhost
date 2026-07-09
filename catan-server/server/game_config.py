@@ -117,6 +117,11 @@ class GameMode:
     # Custom boards can't use the official coast-following spiral (it only walks
     # the standard shapes), so they place numbers randomly.
     number_placement: str = "official_spiral"
+    # Hidden modes aren't offered to clients and can't be started. The 5-6
+    # expansion board is hidden until its road graph is correct (see task #9 /
+    # catanatron-board-graph-limit): catanatron's global STATIC_GRAPH is fixed
+    # to the 54-node standard board, so this larger board renders bad roads.
+    hidden: bool = False
 
     def build_map(self) -> CatanMap:
         return CatanMap.from_template(
@@ -149,6 +154,7 @@ GAME_MODES: dict[str, GameMode] = {
         vps_to_win=10,
         map_template=EXPANSION_TEMPLATE,
         number_placement="random",
+        hidden=True,  # disabled until the board's road graph is correct (task #9)
     ),
     # Note: the official 5-6 "special building phase" is not modelled — the
     # bigger board plays with standard turn order (see README roadmap).
