@@ -4,7 +4,7 @@
 #
 #     docker compose up -d --build
 #
-# Then everyone on the same Wi-Fi/LAN opens  http://<this-machine-ip>:8080
+# Then everyone on the same Wi-Fi/LAN opens  http://<this-machine-ip>:2517
 # (find the IP with `ipconfig getifaddr en0` on macOS or `hostname -I` on Linux).
 #
 # The frontend container (nginx) serves the React build AND reverse-proxies
@@ -28,7 +28,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "8080:80"                        # the single URL players use on the LAN
+      - "2517:80"                        # the single URL players use on the LAN
 
 volumes:
   catan_rooms:

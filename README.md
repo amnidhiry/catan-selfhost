@@ -54,7 +54,7 @@ ipconfig getifaddr en0
 hostname -I | awk '{print $1}'
 ```
 
-Everyone on the same network opens **`http://<that-ip>:8080`**. One person clicks
+Everyone on the same network opens **`http://<that-ip>:2517`**. One person clicks
 *Host a new island*, shares the 4-letter room code, and the rest *Join* with it.
 The host picks the mode and starts once enough seats are filled.
 
