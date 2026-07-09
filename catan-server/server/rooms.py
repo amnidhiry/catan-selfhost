@@ -27,6 +27,9 @@ from catanatron.players.weighted_random import WeightedRandomPlayer
 from catanatron.state_functions import player_key
 
 from .game_config import GAME_MODES, GameMode
+from .bot_personas import persona_for_index
+
+BOT_REPLY_COOLDOWN = 8.0  # seconds between bot chat replies per room (API spend)
 
 PERSIST_DIR = Path("/data/rooms")
 SEAT_ORDER = [
@@ -73,6 +76,7 @@ class Seat:
     ws: Optional[object] = None  # fastapi WebSocket; not pickled
     is_bot: bool = False
     bot_kind: Optional[str] = None  # key into BOT_KINDS when is_bot
+    bot_persona_key: Optional[str] = None  # chat personality (bot_personas.py)
 
 
 @dataclass
@@ -96,6 +100,10 @@ class Room:
     # one ordered list the client renders as a chat feed. Capped at CHAT_LOG_CAP.
     chat_log: list = field(default_factory=list)
     chat_seq: int = 0
+    # Per-bot-color rolling log of that bot's OWN recent moves (one-line
+    # rationales) — feeds only that bot's chat context, never another's.
+    bot_move_log: dict = field(default_factory=dict)
+    _last_bot_reply_ts: float = 0.0  # in-memory rate limit; not pickled
     # Optional per-turn timer (host-selected, seconds; 0 = off). After a human
     # rolls, the server auto-ends the turn if they haven't within this window.
     turn_timer_seconds: int = 0
@@ -126,14 +134,16 @@ class Room:
             raise ValueError("no free seat")
         if kind not in BOT_KINDS:
             kind = DEFAULT_BOT_KIND
-        n = sum(1 for s in self.seats.values() if s.is_bot) + 1
+        n_bots = sum(1 for s in self.seats.values() if s.is_bot)
+        persona = persona_for_index(n_bots)  # round-robin Reyna/Marcus/Fizz
         seat = Seat(
-            name=f"Bot {n}",
+            name=persona.name,
             color=color,
             rejoin_token="",
             connected=True,
             is_bot=True,
             bot_kind=kind,
+            bot_persona_key=persona.key,
         )
         self.seats[color] = seat
         return seat
@@ -209,9 +219,51 @@ class Room:
         text = str(text or "").strip()[:400]
         if not text:
             raise ValueError("empty message")
+        seat = self.seats.get(color)
         return self._append_chat(
-            {"kind": "msg", "color": color.value, "name": self._name_of(color), "text": text}
+            {"kind": "msg", "color": color.value, "name": self._name_of(color),
+             "text": text, "is_bot": bool(seat and seat.is_bot)}
         )
+
+    # --- bot chat support (task #11) ---
+    def record_bot_move(self, color: Color, action) -> None:
+        """Append a one-line rationale for a bot's own move to its rolling log
+        (last 5). Used only in that bot's chat context."""
+        from collections import deque
+
+        log = self.bot_move_log.get(color)
+        if log is None:
+            log = self.bot_move_log[color] = deque(maxlen=5)
+        log.append(self._describe_action(action))
+
+    @staticmethod
+    def _describe_action(action) -> str:
+        at = action.action_type.name
+        v = action.value
+        return {
+            "ROLL": "rolled the dice",
+            "BUILD_SETTLEMENT": f"settled a new spot (node {v})",
+            "BUILD_CITY": f"upgraded to a city (node {v})",
+            "BUILD_ROAD": "extended a road",
+            "BUY_DEVELOPMENT_CARD": "bought a development card",
+            "PLAY_KNIGHT_CARD": "played a knight and moved the robber",
+            "PLAY_MONOPOLY": f"monopolized {v}",
+            "PLAY_YEAR_OF_PLENTY": "took two cards from the bank",
+            "PLAY_ROAD_BUILDING": "played road building (2 free roads)",
+            "MOVE_ROBBER": "moved the robber to hurt a rival",
+            "MARITIME_TRADE": "traded with the bank/port",
+            "END_TURN": "ended the turn",
+            "DISCARD": "had to discard to the robber",
+        }.get(at, at.lower().replace("_", " "))
+
+    def bot_reply_allowed(self) -> bool:
+        """Per-room sliding cooldown across all bots (caps API spend + spam).
+        Reserves the slot when it returns True."""
+        now = time.time()
+        if now - self._last_bot_reply_ts < BOT_REPLY_COOLDOWN:
+            return False
+        self._last_bot_reply_ts = now
+        return True
 
     def _norm_deck(self, deck) -> dict:
         out = {}

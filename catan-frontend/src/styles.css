@@ -311,6 +311,11 @@ footer {
   display: flex; flex-direction: column; gap: 0.5rem;
 }
 .chat-msg { font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.chat-bot-badge {
+  margin-left: 0.3rem; padding: 0 0.3rem; border-radius: 5px;
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+  background: var(--parchment-edge); color: var(--parchment); vertical-align: middle;
+}
 .chat-trade {
   border: 1.5px solid var(--parchment-edge); border-left: 5px solid var(--seat);
   border-radius: 8px; padding: 0.5rem 0.6rem; background: #fff;

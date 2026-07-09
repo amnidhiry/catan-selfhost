@@ -146,7 +146,9 @@ export default function ChatPanel({ chat, client, state }) {
           ) : (
             <div key={e.id} className="chat-msg"
                  style={{ "--seat": `var(--p-${e.color.toLowerCase()})` }}>
-              <span className="seat-dot" /><b>{e.name}:</b> {e.text}
+              <span className="seat-dot" />
+              <b>{e.name}</b>{e.is_bot && <span className="chat-bot-badge">bot</span>}
+              <span>: {e.text}</span>
             </div>
           )
         )}

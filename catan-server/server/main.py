@@ -15,8 +15,10 @@ from catanatron.models.player import Color
 from catanatron.models.enums import ActionType
 
 from .rooms import registry, Room, RoomPhase, Seat
-from .serializer import serialize_for
+from .serializer import serialize_for, serialize_public_player, serialize_private_hand
 from .game_config import GAME_MODES
+from .bot_personas import BOT_PERSONAS
+from . import bot_chat
 
 # Seconds between consecutive bot actions, so humans can watch bots play out
 # their turn rather than seeing the board teleport to the end state.
@@ -112,6 +114,68 @@ async def bot_consider_offer(room: Room, offer_id: int):
     await broadcast_state(room)  # the swap moved cards between hands
 
 
+def _bot_seats(room: Room):
+    """(color, persona) for each seated bot with a chat persona."""
+    return [
+        (c, BOT_PERSONAS[s.bot_persona_key])
+        for c, s in room.seats.items()
+        if s.is_bot and s.bot_persona_key in BOT_PERSONAS
+    ]
+
+
+def _bot_public_state(room: Room, color) -> dict:
+    game = room.game
+    vps = {
+        c.value: serialize_public_player(game, c)["public_victory_points"]
+        for c in room.seating
+    }
+    hand = serialize_private_hand(game, color)["resources"]  # bot knows its own
+    mine = ", ".join(f"{n} {r.lower()}" for r, n in hand.items() if n) or "empty"
+    return {
+        "vps": vps,
+        "current_player": game.state.current_color().value,
+        "my_resources": mine,
+    }
+
+
+async def maybe_bot_reply(room: Room, text: str):
+    """If a human chat line addresses a bot, reply (Haiku if on-topic, else a
+    canned deflection). Fired after the human message is already broadcast, so
+    chat feels instant and a slow API call never blocks anyone's turn."""
+    if room.game is None:
+        return
+    bots = _bot_seats(room)
+    if not bots:
+        return
+    color = bot_chat.find_addressed_bot(text, bots)
+    if color is None or not room.bot_reply_allowed():
+        return
+    persona = BOT_PERSONAS[room.seats[color].bot_persona_key]
+    vocab = {s.name.lower() for s in room.seats.values()}
+    if not bot_chat.looks_on_topic(text, vocab):
+        async with room.lock:
+            room.post_chat(color, bot_chat.pick_deflection(persona))
+        await broadcast_chat(room)
+        return
+    asyncio.create_task(_bot_haiku_reply(room, color, persona, text))
+
+
+async def _bot_haiku_reply(room: Room, color, persona, text: str):
+    recent = [
+        f"{e['name']}: {e['text']}"
+        for e in room.chat_log[-6:] if e.get("kind") == "msg"
+    ]
+    context = bot_chat.build_bot_context(
+        persona, bot_chat.RULEBOOK,
+        list(room.bot_move_log.get(color, [])),
+        _bot_public_state(room, color), recent,
+    )
+    reply = await bot_chat.get_bot_reply(persona, context, text)
+    async with room.lock:
+        room.post_chat(color, reply)
+    await broadcast_chat(room)
+
+
 async def start_turn_timer(room: Room):
     """If a per-turn timer is on, arm a watcher for the current human turn.
     On expiry it force-advances the turn (see Room.force_advance_turn). Stale
@@ -165,6 +229,7 @@ async def drive_bots(room: Room):
         try:
             action = await asyncio.to_thread(bot.decide, game, options)
             room.execute(color, action.action_type, action.value)
+            room.record_bot_move(color, action)  # for this bot's chat context
         except Exception:
             break  # never let a misbehaving bot wedge the room
         room.persist()
@@ -326,6 +391,9 @@ async def game_socket(ws: WebSocket, room_code: str):
                 # Let bots mull a fresh offer (they accept after a short delay).
                 if new_offer_id is not None and any(s.is_bot for s in room.seats.values()):
                     asyncio.create_task(bot_consider_offer(room, new_offer_id))
+                # An addressed bot may reply in chat (async; never blocks).
+                if mtype == "chat_send":
+                    await maybe_bot_reply(room, data.get("text", ""))
                 continue
 
             # -- host: manage bot seats (lobby only) --
