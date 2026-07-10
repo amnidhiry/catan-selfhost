@@ -104,6 +104,7 @@ class Room:
     # rationales) — feeds only that bot's chat context, never another's.
     bot_move_log: dict = field(default_factory=dict)
     _last_bot_reply_ts: float = 0.0  # in-memory rate limit; not pickled
+    _bot_offered: set = field(default_factory=set)  # bot colors that offered this turn
     # Optional per-turn timer (host-selected, seconds; 0 = off). After a human
     # rolls, the server auto-ends the turn if they haven't within this window.
     turn_timer_seconds: int = 0
@@ -345,6 +346,21 @@ class Room:
                 return color
         return None
 
+    def bot_trade_candidate(self, color: Color):
+        """A fair 1-for-1 offer a bot could propose: give one card it has a real
+        surplus of (3+), get one it's short on (0-1). Card-neutral by design, so
+        it's never a lopsided/extractive ask. Returns (give, get) or None."""
+        ps = self.game.state.player_state
+        key = player_key(self.game.state, color)
+        hand = {r: ps[f"{key}_{r}_IN_HAND"] for r in RESOURCES}
+        surplus = max((r for r in RESOURCES if hand[r] >= 3), key=lambda r: hand[r], default=None)
+        if surplus is None:
+            return None
+        need = min((r for r in RESOURCES if r != surplus), key=lambda r: hand[r])
+        if hand[need] > 1:
+            return None  # not actually short on anything
+        return ({surplus: 1}, {need: 1})
+
     def _find_trade(self, offer_id) -> Optional[dict]:
         for entry in self.chat_log:
             if entry.get("kind") == "trade" and entry["id"] == offer_id:
@@ -433,10 +449,12 @@ class Room:
             self._grant_starting_resources(color, value)
 
         self.seq += 1
-        # A turn ending invalidates any pending turn-timer watcher for that turn.
+        # A turn ending invalidates any pending turn-timer watcher for that turn,
+        # and frees the ender to make a fresh bot-trade offer next turn.
         if action_type == ActionType.END_TURN:
             self._turn_token += 1
             self.turn_deadline = None
+            self._bot_offered.discard(color)
         if self.game.winning_color() is not None:
             self.phase = RoomPhase.OVER
 

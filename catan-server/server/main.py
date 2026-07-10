@@ -103,6 +103,7 @@ async def bot_consider_offer(room: Room, offer_id: int):
     willing bot take an open chat offer. One arithmetic pass per bot — cheap."""
     await asyncio.sleep(BOT_TRADE_THINK_SECONDS)
     async with room.lock:
+        offer = room._find_trade(offer_id)
         taker = room.first_bot_to_accept(offer_id)
         if taker is None:
             return
@@ -113,6 +114,12 @@ async def bot_consider_offer(room: Room, offer_id: int):
         room.persist()
     await broadcast_chat(room)
     await broadcast_state(room)  # the swap moved cards between hands
+    # A beat later, the bot reacts in character (never blocks the swap).
+    asyncio.create_task(bot_flavor_line(
+        room, taker,
+        f"You just accepted {offer['name']}'s trade — you gave {offer['get']} "
+        f"and got {offer['give']}. React briefly, in character.",
+    ))
 
 
 def _bot_seats(room: Room):
@@ -177,6 +184,27 @@ async def _bot_haiku_reply(room: Room, color, persona, text: str):
     await broadcast_chat(room)
 
 
+async def bot_flavor_line(room: Room, color, situation: str):
+    """Unprompted in-character chat reacting to something the bot just did (a
+    trade it accepted, an offer it made). Skipped without an API key — we don't
+    spam canned deflections unprompted — and gated by the same reply cooldown."""
+    seat = room.seats.get(color)
+    if not seat or not seat.is_bot or seat.bot_persona_key not in BOT_PERSONAS:
+        return
+    if not bot_chat.haiku_available() or not room.bot_reply_allowed():
+        return
+    persona = BOT_PERSONAS[seat.bot_persona_key]
+    recent = [f"{e['name']}: {e['text']}" for e in room.chat_log[-6:] if e.get("kind") == "msg"]
+    context = bot_chat.build_bot_context(
+        persona, bot_chat.RULEBOOK, list(room.bot_move_log.get(color, [])),
+        _bot_public_state(room, color), recent,
+    )
+    reply = await bot_chat.get_bot_reply(persona, context, situation)
+    async with room.lock:
+        room.post_chat(color, reply)
+    await broadcast_chat(room)
+
+
 async def start_turn_timer(room: Room):
     """If a per-turn timer is on, arm a watcher for the current human turn.
     On expiry it force-advances the turn (see Room.force_advance_turn). Stale
@@ -232,6 +260,25 @@ async def drive_bots(room: Room):
                 if bot is None:
                     break
                 game = room.game
+                # Once per turn, a bot with a real shortfall floats a fair chat
+                # offer (capped so it never spams). Others may take it async.
+                if (game.state.current_prompt == ActionPrompt.PLAY_TURN
+                        and color not in room._bot_offered):
+                    room._bot_offered.add(color)  # at most one attempt this turn
+                    cand = room.bot_trade_candidate(color)
+                    if cand:
+                        give, get = cand
+                        try:
+                            oid = room.propose_trade(color, give, get)["id"]
+                            room.persist()
+                            await broadcast_chat(room)
+                            asyncio.create_task(bot_consider_offer(room, oid))
+                            asyncio.create_task(bot_flavor_line(
+                                room, color,
+                                f"You just offered a trade: giving {give} for {get}. "
+                                f"Announce it to the table in character, briefly."))
+                        except ValueError:
+                            pass
                 # Never let a bot initiate catanatron's blocking domestic-trade
                 # flow (OFFER_TRADE): humans have no engine-trade UI, so a bot
                 # offer would deadlock. END_TURN is always available, so filtering

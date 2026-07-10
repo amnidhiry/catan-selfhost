@@ -77,6 +77,38 @@ def test_bot_game_completes():
     print(f"bot game winner: {room.game.winning_color()}")
 
 
+def test_bot_trade_offers_are_fair():
+    """A bot only floats a trade when it has a real surplus (3+) and shortfall
+    (<=1), and the offer is always a card-neutral 1-for-1 (never lopsided)."""
+    from catanatron.models.enums import RESOURCES, ActionPrompt
+    from catanatron.state_functions import player_key
+
+    room = Room(code="BT", host_token="t")
+    room.seats[Color.RED] = Seat("human", Color.RED, "h")
+    room.add_bot("normal")
+    room.start("mini_2p")
+    s = room.game.state
+    while s.current_prompt in (ActionPrompt.BUILD_INITIAL_SETTLEMENT, ActionPrompt.BUILD_INITIAL_ROAD):
+        a = random.choice(room.game.playable_actions)
+        room.execute(a.color, a.action_type, a.value)
+
+    def set_hand(**cards):
+        k = player_key(s, Color.BLUE)
+        for r in RESOURCES:
+            s.player_state[f"{k}_{r}_IN_HAND"] = cards.get(r.lower(), 0)
+
+    set_hand(wood=4, ore=0, brick=1, sheep=1, wheat=1)
+    give, get = room.bot_trade_candidate(Color.BLUE)
+    assert sum(give.values()) == 1 and sum(get.values()) == 1  # card-neutral
+    assert set(give) != set(get)
+
+    set_hand(wood=2, ore=2, brick=2, sheep=2, wheat=2)  # no surplus
+    assert room.bot_trade_candidate(Color.BLUE) is None
+    set_hand(wood=5, ore=3, brick=3, sheep=3, wheat=3)  # nothing short
+    assert room.bot_trade_candidate(Color.BLUE) is None
+    print("bot trade offers: fair 1-for-1, only on real surplus+shortfall ✓")
+
+
 def test_serializer_hides_opponent_hands():
     room = Room(code="TEST", host_token="t")
     room.seats[Color.RED] = Seat("abe", Color.RED, "t1")
@@ -100,5 +132,6 @@ if __name__ == "__main__":
     test_standard_completes()
     test_expansion_6p_completes()
     test_bot_game_completes()
+    test_bot_trade_offers_are_fair()
     test_serializer_hides_opponent_hands()
     print("ALL SMOKE TESTS PASSED")
