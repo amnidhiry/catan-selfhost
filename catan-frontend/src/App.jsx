@@ -7,6 +7,13 @@ import BuildCosts from "./BuildCosts";
 
 const RESOURCES = ["WOOD", "BRICK", "SHEEP", "WHEAT", "ORE"];
 const RES_ICON = { WOOD: "🪵", BRICK: "🧱", SHEEP: "🐑", WHEAT: "🌾", ORE: "🪨" };
+// last_action type -> [emoji, label] for the build "receipt" toast.
+const BUILD_RECEIPT = {
+  BUILD_SETTLEMENT: ["🏠", "Settlement"],
+  BUILD_CITY: ["🏙️", "City"],
+  BUILD_ROAD: ["🛣️", "Road"],
+  BUY_DEVELOPMENT_CARD: ["🃏", "Dev card"],
+};
 const DEV_ICON = {
   KNIGHT: "🐴",
   VICTORY_POINT: "🏆",
@@ -73,6 +80,7 @@ function Seats({ room, isHost, onStart, onAddBot, onRemoveBot }) {
   const [mode, setMode] = useState("standard");
   const [bonusStart, setBonusStart] = useState(false);
   const [turnTimer, setTurnTimer] = useState(0);
+  const [quickDiscard, setQuickDiscard] = useState(false);
   const [botKind, setBotKind] = useState("normal");
   const eligible = room.modes.filter(
     (m) => room.players.length >= m.min && room.players.length <= m.max
@@ -112,6 +120,11 @@ function Seats({ room, isHost, onStart, onAddBot, onRemoveBot }) {
                    onChange={(e) => setBonusStart(e.target.checked)} />
             Generous start — collect from both starting settlements
           </label>
+          <label className="house-rule" title="Official rule: on a 7, players pick which cards to discard. Turn this on to auto-drop a random half instead (faster).">
+            <input type="checkbox" checked={quickDiscard}
+                   onChange={(e) => setQuickDiscard(e.target.checked)} />
+            Quick discard — drop a random half on a 7
+          </label>
           <label className="house-rule" title="After a player rolls, auto-end their turn if they don't within this time.">
             <span>Turn timer</span>
             <select value={turnTimer} onChange={(e) => setTurnTimer(Number(e.target.value))}>
@@ -134,7 +147,7 @@ function Seats({ room, isHost, onStart, onAddBot, onRemoveBot }) {
             </select>
             <button className="primary"
                     disabled={!eligible.some((x) => x.key === mode)}
-                    onClick={() => onStart(mode, { bonusStart, turnTimer })}>
+                    onClick={() => onStart(mode, { bonusStart, turnTimer, discardMode: quickDiscard ? "random" : "choose" })}>
               Start game
             </button>
           </div>
@@ -234,19 +247,21 @@ function SetupBanner({ state, names }) {
 }
 
 function DiscardPanel({ state, client }) {
-  // Active only for the player currently over the hand limit after a 7.
-  // The engine offers a single DISCARD action that removes a random half of
-  // the hand (no per-card choice), so this is one confirm button.
-  const mustDiscard = (state.playable_actions ?? []).some((a) => a.type === "DISCARD");
-  if (!mustDiscard) return null;
+  // Shown only when it's your turn to discard after a 7. The engine wants one
+  // chosen card at a time (DISCARD_RESOURCE per resource you hold); click to
+  // drop one, the server re-prompts until you've discarded enough. In "random"
+  // mode the server auto-resolves this, so these actions never reach you.
+  const discards = (state.playable_actions ?? []).filter((a) => a.type === "DISCARD_RESOURCE");
+  if (!discards.length) return null;
   const n = state.discard_remaining;
   return (
     <div className="trade-panel urgent">
-      <b>Robber! You must discard {n} card{n === 1 ? "" : "s"}.</b>
-      <span className="trade-note">A random half of your hand is discarded.</span>
-      <button className="primary" onClick={() => client.discard()}>
-        Discard {n}
-      </button>
+      <b>Robber! Choose {n} more to discard:</b>
+      {discards.map((a) => (
+        <button key={a.value} onClick={() => client.discard(a.value)}>
+          {RES_ICON[a.value]} {state.your_hand.resources[a.value]}
+        </button>
+      ))}
     </div>
   );
 }
@@ -277,21 +292,46 @@ function Toasts({ toasts }) {
   if (!toasts.length) return null;
   return (
     <div className="toast-stack" aria-live="polite">
-      {toasts.map((t) => (
-        <div key={t.id} className={`toast ${t.kind === "vp" ? "toast-vp" : ""}`}>
-          {t.kind === "gain" ? (
-            <>
+      {toasts.map((t) => {
+        if (t.kind === "gain")
+          return (
+            <div key={t.id} className="toast">
               <span className="toast-plus">+</span>
               {t.gains.map((g) => (
                 <span key={g.r} className="toast-item">{g.n} {RES_ICON[g.r]}</span>
               ))}
               <span className="toast-label">received</span>
-            </>
-          ) : (
-            <span>★ +{t.n} victory point{t.n === 1 ? "" : "s"}!</span>
-          )}
-        </div>
-      ))}
+            </div>
+          );
+        if (t.kind === "vp")
+          return (
+            <div key={t.id} className="toast toast-vp">
+              <span>★ +{t.n} victory point{t.n === 1 ? "" : "s"}!</span>
+            </div>
+          );
+        if (t.kind === "loss")
+          return (
+            <div key={t.id} className="toast toast-loss">
+              <span className="toast-minus">−</span>
+              {t.losses.map((g) => (
+                <span key={g.r} className="toast-item">{g.n} {RES_ICON[g.r]}</span>
+              ))}
+              <span className="toast-label">{t.label}</span>
+            </div>
+          );
+        // receipt: a little parchment slip for a build spend
+        return (
+          <div key={t.id} className="toast toast-receipt">
+            <span className="receipt-cost">
+              {t.losses.map((g) => (
+                <span key={g.r} className="toast-item">−{g.n} {RES_ICON[g.r]}</span>
+              ))}
+            </span>
+            <span className="receipt-arrow">→</span>
+            <span className="receipt-result">{t.piece[0]} {t.piece[1]}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -447,11 +487,30 @@ export default function App() {
     const gains = RESOURCES
       .map((r) => ({ r, n: (hand.resources[r] ?? 0) - (prev.resources[r] ?? 0) }))
       .filter((g) => g.n > 0);
+    const losses = RESOURCES
+      .map((r) => ({ r, n: (prev.resources[r] ?? 0) - (hand.resources[r] ?? 0) }))
+      .filter((g) => g.n > 0);
     const vpGain = snapshot.vp - prev.vp;
 
     const fresh = [];
     if (gains.length) fresh.push({ id: ++toastIdRef.current, kind: "gain", gains });
     if (vpGain > 0) fresh.push({ id: ++toastIdRef.current, kind: "vp", n: vpGain });
+
+    // Attribute a resource loss to its cause via the last action.
+    if (losses.length) {
+      const la = state.last_action; // { type, color }
+      const mine = la && la.color === state.your_color;
+      const who = la ? nameByColor[la.color]?.name ?? la.color : "someone";
+      if (la && la.type === "MOVE_ROBBER" && !mine)
+        fresh.push({ id: ++toastIdRef.current, kind: "loss", losses, label: `stolen by ${who}` });
+      else if (la && la.type === "PLAY_MONOPOLY" && !mine)
+        fresh.push({ id: ++toastIdRef.current, kind: "loss", losses, label: `to ${who}'s monopoly` });
+      else if (la && BUILD_RECEIPT[la.type] && mine)
+        fresh.push({ id: ++toastIdRef.current, kind: "receipt", losses, piece: BUILD_RECEIPT[la.type] });
+      else if (la && la.type === "DISCARD_RESOURCE" && mine)
+        fresh.push({ id: ++toastIdRef.current, kind: "loss", losses, label: "discarded to the robber" });
+      // else: trades etc. — the gain toast already shows the "+" side.
+    }
     if (!fresh.length) return;
 
     setToasts((t) => [...t, ...fresh]);

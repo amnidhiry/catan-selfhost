@@ -145,6 +145,7 @@ export class CatanClient {
       mode,
       bonus_start: !!options.bonusStart,
       turn_timer: Number(options.turnTimer) || 0,
+      discard_mode: options.discardMode === "random" ? "random" : "choose",
     });
   }
 

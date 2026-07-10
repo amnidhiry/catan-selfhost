@@ -123,6 +123,16 @@ def discard_remaining(game: Game, color: Color) -> int:
     return hand // 2
 
 
+def last_action(game: Game) -> Optional[dict]:
+    """The most recent action's type + actor color, so the client can attribute
+    a resource change to a cause (stolen by X / discarded / spent on a build)."""
+    records = game.state.action_records
+    if not records:
+        return None
+    rec = records[-1]
+    return {"type": rec.action.action_type.name, "color": rec.action.color.value}
+
+
 def last_roll(game: Game) -> Optional[list]:
     """The two dice faces of the most recent roll, or None (e.g. during setup,
     before anyone has rolled). catanatron rolls 2d6 and records the pair as the
@@ -177,5 +187,7 @@ def serialize_for(game: Game, viewer: Color, seating: list[Color]) -> dict:
         "playable_actions": serialize_playable_actions(game, viewer),
         # Two dice faces of the most recent roll (null during setup).
         "last_roll": last_roll(game),
+        # Most recent action (type + actor) — lets the UI label resource losses.
+        "last_action": last_action(game),
         "winner": game.winning_color().value if game.winning_color() else None,
     }

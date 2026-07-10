@@ -107,6 +107,9 @@ class Room:
     # Optional per-turn timer (host-selected, seconds; 0 = off). After a human
     # rolls, the server auto-ends the turn if they haven't within this window.
     turn_timer_seconds: int = 0
+    # 7-roll discard: "choose" = players pick which cards (official rule);
+    # "random" = server auto-drops a random half (faster).
+    discard_mode: str = "choose"
     # In-memory only (never pickled): bumped whenever a turn ends, so a pending
     # timeout watcher can tell its turn already finished. turn_deadline is the
     # epoch the current turn auto-ends (for the UI countdown), or None.
@@ -157,10 +160,12 @@ class Room:
         del self.seats[color]
 
     # --- game start ---
-    def start(self, mode_key: str, bonus_start: bool = False, turn_timer_seconds: int = 0):
+    def start(self, mode_key: str, bonus_start: bool = False, turn_timer_seconds: int = 0,
+              discard_mode: str = "choose"):
         mode = GAME_MODES.get(mode_key)
         if mode is None or mode.hidden:
             raise ValueError("that game mode isn't available")
+        self.discard_mode = "random" if discard_mode == "random" else "choose"
         n = len(self.seats)
         if not (mode.min_players <= n <= mode.max_players):
             raise ValueError(
@@ -502,6 +507,7 @@ class Room:
             "chat_log": self.chat_log,
             "chat_seq": self.chat_seq,
             "turn_timer_seconds": self.turn_timer_seconds,
+            "discard_mode": self.discard_mode,
         }
         (PERSIST_DIR / f"{self.code}.pkl").write_bytes(pickle.dumps(snapshot))
 
@@ -517,6 +523,7 @@ class Room:
         room.chat_log = snap.get("chat_log", [])
         room.chat_seq = snap.get("chat_seq", 0)
         room.turn_timer_seconds = snap.get("turn_timer_seconds", 0)
+        room.discard_mode = snap.get("discard_mode", "choose")
         for color, s in snap["seats"].items():
             is_bot = s.get("is_bot", False)
             room.seats[color] = Seat(

@@ -139,6 +139,17 @@ footer {
   animation: toast-pop 0.28s ease-out, toast-fade 0.5s ease-in 3.7s forwards;
 }
 .toast-vp { background: var(--hint); }
+.toast-loss { border-color: var(--hot-number); }
+.toast-minus { color: var(--hot-number); font-size: 1.15rem; line-height: 1; }
+/* build "receipt": parchment slip listing the cost -> the piece; slides down out */
+.toast-receipt {
+  border-style: dashed; gap: 0.5rem;
+  animation: toast-pop 0.28s ease-out, receipt-out 0.55s ease-in 3.6s forwards;
+}
+.receipt-cost { display: inline-flex; gap: 0.35rem; color: var(--hot-number); }
+.receipt-arrow { color: var(--ink-soft); font-weight: 800; }
+.receipt-result { font-weight: 800; }
+@keyframes receipt-out { to { opacity: 0; transform: translateY(18px); } }
 .toast-plus { color: var(--forest); font-size: 1.15rem; line-height: 1; }
 .toast-item { font-variant-numeric: tabular-nums; }
 .toast-label { color: var(--ink-soft); font-weight: 600; font-size: var(--fs-sm); }

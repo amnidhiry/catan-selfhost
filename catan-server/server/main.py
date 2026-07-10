@@ -5,6 +5,7 @@ Client actions map to catanatron ActionTypes (schema section 5).
 """
 import asyncio
 import json
+import random
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -12,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from catanatron.models.player import Color
-from catanatron.models.enums import ActionType
+from catanatron.models.enums import ActionType, ActionPrompt
 
 from .rooms import registry, Room, RoomPhase, Seat
 from .serializer import serialize_for, serialize_public_player, serialize_private_hand
@@ -211,33 +212,55 @@ async def drive_bots(room: Room):
     keep the event loop responsive for every other room.
     """
     steps = 0
-    while (
-        room.phase == RoomPhase.PLAYING
-        and room.game.winning_color() is None
-        and room.is_bot(room.game.state.current_color())
-    ):
+    while room.phase == RoomPhase.PLAYING and room.game.winning_color() is None:
         color = room.game.state.current_color()
-        bot = room.bot_player(color)
-        if bot is None:
+        is_bot = room.is_bot(color)
+        # In "random" discard mode the server drops a random half for humans too,
+        # so a 7 never waits on a picker.
+        rand_discard = (
+            not is_bot
+            and room.discard_mode == "random"
+            and room.game.state.current_prompt == ActionPrompt.DISCARD
+        )
+        if not (is_bot or rand_discard):
             break
-        game = room.game
-        # Never let a bot initiate catanatron's blocking domestic-trade flow
-        # (OFFER_TRADE): humans have no engine-trade UI anymore — trades happen
-        # in chat — so a bot offer would deadlock the turn. Filtering it out
-        # also can't strand the bot: END_TURN is always available in PLAY_TURN.
-        options = [a for a in game.playable_actions if a.action_type != ActionType.OFFER_TRADE]
+
+        pace = 0
         try:
-            action = await asyncio.to_thread(bot.decide, game, options)
-            room.execute(color, action.action_type, action.value)
-            room.record_bot_move(color, action)  # for this bot's chat context
+            if is_bot:
+                bot = room.bot_player(color)
+                if bot is None:
+                    break
+                game = room.game
+                # Never let a bot initiate catanatron's blocking domestic-trade
+                # flow (OFFER_TRADE): humans have no engine-trade UI, so a bot
+                # offer would deadlock. END_TURN is always available, so filtering
+                # it can't strand the bot.
+                options = [a for a in game.playable_actions if a.action_type != ActionType.OFFER_TRADE]
+                action = await asyncio.to_thread(bot.decide, game, options)
+                room.execute(color, action.action_type, action.value)
+                room.record_bot_move(color, action)  # for this bot's chat context
+                pace = BOT_STEP_PACING
+            else:  # random-mode human discard: drop all owed cards at once
+                while (
+                    room.game.state.current_prompt == ActionPrompt.DISCARD
+                    and room.game.state.current_color() == color
+                ):
+                    opts = [a for a in room.game.playable_actions
+                            if a.action_type == ActionType.DISCARD_RESOURCE]
+                    if not opts:
+                        break
+                    a = random.choice(opts)
+                    room.execute(color, a.action_type, a.value)
         except Exception:
-            break  # never let a misbehaving bot wedge the room
+            break  # never let a misbehaving bot/discard wedge the room
         room.persist()
         await broadcast_state(room)
         steps += 1
-        if steps > 3000:  # safety valve against a non-terminating bot loop
+        if steps > 3000:  # safety valve against a non-terminating loop
             break
-        await asyncio.sleep(BOT_STEP_PACING)
+        if pace:
+            await asyncio.sleep(pace)
 
 
 # --- client->server action mapping (schema section 5) ----------------------
@@ -277,9 +300,9 @@ def parse_action(msg_type: str, data: dict):
         victim = Color[data["victim"]] if data.get("victim") else None
         return ActionType.MOVE_ROBBER, (tuple(data["coordinate"]), victim)
     if msg_type == "discard":
-        # catanatron discards a random half of the hand in one action; there is
-        # no per-card DISCARD_RESOURCE in the engine. Value is always None.
-        return ActionType.DISCARD, None
+        # The engine only supports per-card discards (DISCARD_RESOURCE); a random
+        # half is auto-resolved server-side (see drive_bots), not sent from here.
+        return ActionType.DISCARD_RESOURCE, data["resource"]
     if msg_type == "play_dev_card":
         card = data["card"]
         if card == "knight":
@@ -422,6 +445,7 @@ async def game_socket(ws: WebSocket, room_code: str):
                             data.get("mode", "standard"),
                             bonus_start=bool(data.get("bonus_start", False)),
                             turn_timer_seconds=int(data.get("turn_timer", 0) or 0),
+                            discard_mode=data.get("discard_mode", "choose"),
                         )
                         room.persist()
                     except ValueError as e:
