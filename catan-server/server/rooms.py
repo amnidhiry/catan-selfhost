@@ -349,16 +349,24 @@ class Room:
     def bot_trade_candidate(self, color: Color):
         """A fair 1-for-1 offer a bot could propose: give one card it has a real
         surplus of (3+), get one it's short on (0-1). Card-neutral by design, so
-        it's never a lopsided/extractive ask. Returns (give, get) or None."""
+        it's never a lopsided/extractive ask. Among its shortfalls it asks for the
+        one MOST produced on the board — likelier to be in circulation, so a human
+        can actually fulfill it. Returns (give, get) or None."""
         ps = self.game.state.player_state
         key = player_key(self.game.state, color)
         hand = {r: ps[f"{key}_{r}_IN_HAND"] for r in RESOURCES}
         surplus = max((r for r in RESOURCES if hand[r] >= 3), key=lambda r: hand[r], default=None)
         if surplus is None:
             return None
-        need = min((r for r in RESOURCES if r != surplus), key=lambda r: hand[r])
-        if hand[need] > 1:
-            return None  # not actually short on anything
+        # board production (pips) per resource — a proxy for what's in circulation
+        prod = {r: 0 for r in RESOURCES}
+        for tile in self.game.state.board.map.land_tiles.values():
+            if tile.resource and tile.number:
+                prod[tile.resource] += 6 - abs(7 - tile.number)
+        shortfalls = [r for r in RESOURCES if r != surplus and hand[r] <= 1]
+        if not shortfalls:
+            return None
+        need = max(shortfalls, key=lambda r: prod[r])
         return ({surplus: 1}, {need: 1})
 
     def _find_trade(self, offer_id) -> Optional[dict]:
