@@ -45,8 +45,11 @@ def test_standard_completes():
     print(f"standard winner: {room.game.winning_color()}")
 
 
-# NOTE: the 5-6 "expansion" mode is currently hidden/disabled (its board's road
-# graph is wrong — see task #9). Its smoke test returns once the board is fixed.
+def test_expansion_6p_completes():
+    room = play_one_game("expansion", ["a", "b", "c", "d", "e", "f"])
+    assert len(room.seats) == 6
+    assert room.game.winning_color() is not None
+    print(f"expansion 6p winner: {room.game.winning_color()}")
 
 
 def test_bot_game_completes():
@@ -95,6 +98,7 @@ if __name__ == "__main__":
     random.seed(42)
     test_mini_2p_completes()
     test_standard_completes()
+    test_expansion_6p_completes()
     test_bot_game_completes()
     test_serializer_hides_opponent_hands()
     print("ALL SMOKE TESTS PASSED")
