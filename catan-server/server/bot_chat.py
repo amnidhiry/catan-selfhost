@@ -51,14 +51,14 @@ def looks_on_topic(message: str, room_vocab: set = frozenset()) -> bool:
     return bool(words & (GAME_KEYWORDS | set(room_vocab)))
 
 
-def find_addressed_bot(text: str, bots):
-    """bots: iterable of (color, persona). Return the color of the bot this
+def find_addressed_bot(text: str, name_pairs):
+    """name_pairs: iterable of (color, name). Return the color of the bot this
     message addresses (via @name or its name appearing in the text), else None.
     First match by seat order wins."""
     low = (text or "").lower()
-    for color, persona in bots:
-        name = persona.name.lower()
-        if f"@{name}" in low or name in low.split() or name in low.replace(",", " ").split():
+    for color, name in name_pairs:
+        nm = name.lower()
+        if f"@{nm}" in low or nm in low.split() or nm in low.replace(",", " ").split():
             return color
     return None
 
@@ -89,19 +89,21 @@ def haiku_available() -> bool:
     return bool(os.environ.get("ANTHROPIC_API_KEY"))
 
 
-async def get_bot_reply(persona, context: str, message: str) -> str:
-    """Best-effort Haiku reply. Returns a canned deflection on ANY failure
-    (missing key, network, rate limit) so the caller never hangs or crashes."""
+async def get_bot_reply(persona, name: str, context: str, message: str) -> str:
+    """Best-effort Haiku reply as the bot named `name`. Returns a canned
+    deflection on ANY failure (missing key, network, rate limit) so the caller
+    never hangs or crashes."""
     if not haiku_available():
         return pick_deflection(persona)
     try:
         import anthropic
+        from .bot_personas import system_prompt_for
 
         client = anthropic.AsyncAnthropic()
         resp = await client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
-            system=persona.system_prompt + "\n\n" + context,
+            system=system_prompt_for(persona, name) + "\n\n" + context,
             messages=[{"role": "user", "content": message[:600]}],
         )
         parts = [b.text for b in resp.content if getattr(b, "type", None) == "text"]

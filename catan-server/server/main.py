@@ -155,7 +155,7 @@ async def maybe_bot_reply(room: Room, text: str):
     bots = _bot_seats(room)
     if not bots:
         return
-    color = bot_chat.find_addressed_bot(text, bots)
+    color = bot_chat.find_addressed_bot(text, [(c, room.seats[c].name) for c, _ in bots])
     if color is None or not room.bot_reply_allowed():
         return
     persona = BOT_PERSONAS[room.seats[color].bot_persona_key]
@@ -178,7 +178,7 @@ async def _bot_haiku_reply(room: Room, color, persona, text: str):
         list(room.bot_move_log.get(color, [])),
         _bot_public_state(room, color), recent,
     )
-    reply = await bot_chat.get_bot_reply(persona, context, text)
+    reply = await bot_chat.get_bot_reply(persona, room.seats[color].name, context, text)
     async with room.lock:
         room.post_chat(color, reply)
     await broadcast_chat(room)
@@ -199,7 +199,7 @@ async def bot_flavor_line(room: Room, color, situation: str):
         persona, bot_chat.RULEBOOK, list(room.bot_move_log.get(color, [])),
         _bot_public_state(room, color), recent,
     )
-    reply = await bot_chat.get_bot_reply(persona, context, situation)
+    reply = await bot_chat.get_bot_reply(persona, seat.name, context, situation)
     async with room.lock:
         room.post_chat(color, reply)
     await broadcast_chat(room)

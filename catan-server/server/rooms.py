@@ -27,7 +27,7 @@ from catanatron.players.weighted_random import WeightedRandomPlayer
 from catanatron.state_functions import player_key
 
 from .game_config import GAME_MODES, GameMode
-from .bot_personas import persona_for_index
+from .bot_personas import persona_for_index, random_bot_name
 
 BOT_REPLY_COOLDOWN = 8.0  # seconds between bot chat replies per room (API spend)
 
@@ -139,9 +139,10 @@ class Room:
         if kind not in BOT_KINDS:
             kind = DEFAULT_BOT_KIND
         n_bots = sum(1 for s in self.seats.values() if s.is_bot)
-        persona = persona_for_index(n_bots)  # round-robin Reyna/Marcus/Fizz
+        persona = persona_for_index(n_bots)  # round-robin personality
+        used_names = [s.name for s in self.seats.values() if s.is_bot]
         seat = Seat(
-            name=persona.name,
+            name=random_bot_name(used_names),  # random, unique within the room
             color=color,
             rejoin_token="",
             connected=True,
