@@ -39,11 +39,24 @@ timer** (60/90/120s) that auto-ends a turn if the player stalls after rolling.
 
 ## Quick start (LAN)
 
-Requires [Docker](https://docs.docker.com/get-docker/) with Compose.
+Requires [Docker](https://docs.docker.com/get-docker/) with Compose. On any
+machine — clone, (optionally) add an API key, and bring it up. The first build
+takes a few minutes (it compiles the frontend and installs the pinned engine);
+after that it's cached, so it starts fast — much like a Docker image, but built
+from source so you always have the code.
 
 ```bash
+git clone https://github.com/amnidhiry/catan-selfhost.git
+cd catan-selfhost
+
+# Optional: enable AI bot chat. Without this, bots still play — they just
+# don't chat via Claude. The .env file is gitignored (never committed).
+cp .env.example .env         # then edit .env and paste your ANTHROPIC_API_KEY
+
 docker compose up -d --build
 ```
+
+To update the machine later: `git pull && docker compose up -d --build`.
 
 Then, on the host machine, find your LAN IP:
 
