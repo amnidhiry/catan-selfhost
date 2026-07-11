@@ -293,8 +293,10 @@ async def drive_bots(room: Room):
                     room.game.state.current_prompt == ActionPrompt.DISCARD
                     and room.game.state.current_color() == color
                 ):
+                    # per-card engine -> pick random resources; bulk engine ->
+                    # the single DISCARD action resolves it in one shot.
                     opts = [a for a in room.game.playable_actions
-                            if a.action_type == ActionType.DISCARD_RESOURCE]
+                            if a.action_type.name in ("DISCARD_RESOURCE", "DISCARD")]
                     if not opts:
                         break
                     a = random.choice(opts)
@@ -347,9 +349,17 @@ def parse_action(msg_type: str, data: dict):
         victim = Color[data["victim"]] if data.get("victim") else None
         return ActionType.MOVE_ROBBER, (tuple(data["coordinate"]), victim)
     if msg_type == "discard":
-        # The engine only supports per-card discards (DISCARD_RESOURCE); a random
-        # half is auto-resolved server-side (see drive_bots), not sent from here.
-        return ActionType.DISCARD_RESOURCE, data["resource"]
+        # Per-card engine: {"resource": "WOOD"} -> DISCARD_RESOURCE. Bulk engine:
+        # no resource -> the single random-half DISCARD. Guard on which the
+        # installed catanatron actually exposes so a version bump can't crash.
+        res = data.get("resource")
+        if res is not None and hasattr(ActionType, "DISCARD_RESOURCE"):
+            return ActionType.DISCARD_RESOURCE, res
+        if hasattr(ActionType, "DISCARD"):
+            return ActionType.DISCARD, None
+        if hasattr(ActionType, "DISCARD_RESOURCE"):
+            return ActionType.DISCARD_RESOURCE, res
+        raise ValueError("engine exposes no discard action")
     if msg_type == "play_dev_card":
         card = data["card"]
         if card == "knight":

@@ -251,19 +251,31 @@ function DiscardPanel({ state, client }) {
   // chosen card at a time (DISCARD_RESOURCE per resource you hold); click to
   // drop one, the server re-prompts until you've discarded enough. In "random"
   // mode the server auto-resolves this, so these actions never reach you.
-  const discards = (state.playable_actions ?? []).filter((a) => a.type === "DISCARD_RESOURCE");
-  if (!discards.length) return null;
+  const actions = state.playable_actions ?? [];
+  const perCard = actions.filter((a) => a.type === "DISCARD_RESOURCE");
+  const hasBulk = actions.some((a) => a.type === "DISCARD");
   const n = state.discard_remaining;
-  return (
-    <div className="trade-panel urgent">
-      <b>Robber! Choose {n} more to discard:</b>
-      {discards.map((a) => (
-        <button key={a.value} onClick={() => client.discard(a.value)}>
-          {RES_ICON[a.value]} {state.your_hand.resources[a.value]}
-        </button>
-      ))}
-    </div>
-  );
+  if (perCard.length)
+    return (
+      <div className="trade-panel urgent">
+        <b>Robber! Choose {n} more to discard:</b>
+        {perCard.map((a) => (
+          <button key={a.value} onClick={() => client.discard(a.value)}>
+            {RES_ICON[a.value]} {state.your_hand.resources[a.value]}
+          </button>
+        ))}
+      </div>
+    );
+  // Fallback for an engine that only supports a bulk random-half discard.
+  if (hasBulk)
+    return (
+      <div className="trade-panel urgent">
+        <b>Robber! You must discard {n} card{n === 1 ? "" : "s"}.</b>
+        <span className="trade-note">A random half of your hand is discarded.</span>
+        <button className="primary" onClick={() => client.discard()}>Discard {n}</button>
+      </div>
+    );
+  return null;
 }
 
 function VictimPicker({ prompt, client, onClose }) {

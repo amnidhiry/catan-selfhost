@@ -108,16 +108,16 @@ def serialize_private_hand(game: Game, color: Color) -> dict:
 
 
 def discard_remaining(game: Game, color: Color) -> int:
-    """How many cards `color` must discard right now (0 when not discarding).
-
-    catanatron discards a random half of the hand in one DISCARD action (there
-    is no per-card choice in the engine), so this is purely for display: the
-    number the current discarder is about to lose. The old per-player
-    `state.discard_counts` array was removed from the engine — derive it.
+    """How many cards `color` must still discard right now (0 when not their
+    discard). Per-card engines track this exactly in state.discard_counts; on a
+    bulk-DISCARD engine (no such array) it's half the hand, lost in one action.
     """
     state = game.state
-    if not state.is_discarding or state.current_color() != color:
+    if not getattr(state, "is_discarding", False) or state.current_color() != color:
         return 0
+    counts = getattr(state, "discard_counts", None)
+    if counts is not None:
+        return counts[state.color_to_index[color]]
     key = _pkey(state, color)
     hand = sum(state.player_state[f"{key}_{r}_IN_HAND"] for r in RESOURCES)
     return hand // 2
