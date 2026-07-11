@@ -1,0 +1,34 @@
+# Run from prebuilt images (no local build) — pulls from GHCR.
+#
+#     docker compose -f docker-compose.ghcr.yml up -d
+#
+# Images are published by .github/workflows/publish.yml on every push to main.
+# The GHCR packages must be public (or run `docker login ghcr.io` first). Put an
+# ANTHROPIC_API_KEY in a local .env next to this file to enable AI bot chat.
+name: catan
+
+services:
+  backend:
+    image: ghcr.io/amnidhiry/catan-selfhost-backend:latest
+    container_name: catan-backend        # nginx.conf proxies to this hostname
+    restart: unless-stopped
+    pull_policy: always                  # `up` grabs the newest published image
+    volumes:
+      - catan_rooms:/data
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    expose:
+      - "8000"
+
+  frontend:
+    image: ghcr.io/amnidhiry/catan-selfhost-frontend:latest
+    container_name: catan-frontend
+    restart: unless-stopped
+    pull_policy: always
+    depends_on:
+      - backend
+    ports:
+      - "2517:80"                        # the single URL players use on the LAN
+
+volumes:
+  catan_rooms:

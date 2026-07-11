@@ -58,6 +58,23 @@ docker compose up -d --build
 
 To update the machine later: `git pull && docker compose up -d --build`.
 
+### Or: run from prebuilt images (no build)
+
+On every push to `main`, a GitHub Action publishes both images to the GitHub
+Container Registry, so another machine can pull and run without building:
+
+```bash
+# only these two files are needed on the target machine
+curl -O https://raw.githubusercontent.com/amnidhiry/catan-selfhost/main/docker-compose.ghcr.yml
+cp .env.example .env   # optional, for AI bot chat
+
+docker compose -f docker-compose.ghcr.yml up -d      # pulls ghcr.io images and runs
+```
+
+The GHCR packages must be **public** for an unauthenticated pull (set once in the
+repo's Packages settings, or `docker login ghcr.io` with a token first). Update
+later with `docker compose -f docker-compose.ghcr.yml pull && ... up -d`.
+
 Then, on the host machine, find your LAN IP:
 
 ```bash
